@@ -142,6 +142,13 @@ def build_all_unit_cards() -> list[UnitCard]:
         _card("加农炮", "低费防守建筑。", 5, 6, 2, 1400, "mid", 0.0, 3, False, "building", "prefer_unit"),
         _card("火枪手", "稳定中远程输出。", 7, 4, 4, 850, "mid", 1.3, 4, False, "unit", "prefer_unit"),
         _card("戈伦冰人", "低费前排与减速骚扰。", 3, 7, 5, 1200, "low", 1.0, 2, False, "unit", "prefer_unit"),
+        _card("雷击法术", "高额法术斩杀与打断。", 9, 1, 6, 1, "low", 0.0, 6, False, "spell", "manual_spell"),
+        _card("万箭齐发", "大范围清场法术。", 6, 1, 7, 1, "mid", 0.0, 3, False, "spell", "manual_spell"),
+        _card("骷髅巨人", "高血量推进并爆破。", 7, 8, 4, 3000, "low", 0.9, 6, False, "unit", "prefer_building"),
+        _card("女巫", "召唤系远程单位。", 6, 5, 7, 1100, "mid", 1.1, 5, False, "unit", "prefer_unit"),
+        _card("亡灵大军", "空中群体压制。", 6, 3, 7, 450, "high", 1.8, 5, True, "unit", "prefer_unit"),
+        _card("骷髅墓碑", "拖延与召唤防守建筑。", 2, 7, 8, 1600, "low", 0.0, 3, False, "building", "prefer_unit"),
+        _card("掘地矿工", "定点突袭后排单位。", 6, 4, 6, 1000, "high", 1.7, 3, False, "unit", "prefer_unit"),
     ]
 
 

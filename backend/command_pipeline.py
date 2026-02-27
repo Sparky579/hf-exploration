@@ -25,9 +25,12 @@ Immediate state commands:
 - `global.battle=<target_role_name|none|true|false>`
 - `global.emergency=<true|false>`
 - `global.main_player=<player_name>`
+- `global.team=<name1,name2,...>`
 - `map.<node>.valid=<true|false>`
 - `<role>.location=<node>`
 - `<role>.escape=<node>`
+- `<role>.discover=<companion_name>`
+- `<role>.invite=<companion_name>`
 - `<role>.health=<number>`
 - `<role>.holy_water=<number>`
 - `<role>.battle=<target_role_name|none>`
@@ -36,15 +39,18 @@ Immediate state commands:
 - `<role>.nearby_unit.<unit_name>=<full|damaged|dead>`
 - `<role>.unit.<unit_id>.health=<number>` (<=0 means dead, remove from active list)
 
+Companion commands:
+- `companion.<name>.discovered=<true|false>`
+- `companion.<name>.in_team=<true|false>`
+- `companion.<name>.affection=<number>`
+- `companion.<name>.noticed_by=<hostile1,hostile2,...>`
+- `companion.<name>.noticed_by+=<hostile>`
+- `companion.<name>.noticed_by-=<hostile>`
+
 Text list commands:
 - `global.state+=<text>` / `global.state-=<text>`
 - `<role>.state+=<text>` / `<role>.state-=<text>`
 - `character.<name>.history+=<text>` / `character.<name>.history-=<text>`
-
-Character profile commands:
-- `character.<name>.status=<存活|死亡|离开校园>`
-- `character.<name>.deck=<卡1,卡2,...,卡8>`
-- `character.<name>.description=<text>`
 """
 
 from __future__ import annotations
@@ -132,10 +138,19 @@ class CommandPipeline:
             self.engine.add_global_dynamic_state(right)
             self.runtime_messages.append("global dynamic state appended")
             return
+        if left == "global.team":
+            self.engine.set_companion_in_team(right, True)
+            self.runtime_messages.append(f"team companion added: {right}")
+            return
         if left.startswith("character.") and left.endswith(".history"):
             name = left[len("character.") : -len(".history")]
             self.engine.add_character_history(name, right)
             self.runtime_messages.append(f"character history appended: {name}")
+            return
+        if left.startswith("companion.") and left.endswith(".noticed_by"):
+            name = left[len("companion.") : -len(".noticed_by")]
+            self.engine.add_companion_noticer(name, right)
+            self.runtime_messages.append(f"companion noticer added: {name} <- {right}")
             return
         if left.endswith(".state"):
             role_name = left[:-6]
@@ -149,10 +164,19 @@ class CommandPipeline:
             self.engine.global_config.remove_dynamic_state(right)
             self.runtime_messages.append("global dynamic state removed")
             return
+        if left == "global.team":
+            self.engine.set_companion_in_team(right, False)
+            self.runtime_messages.append(f"team companion removed: {right}")
+            return
         if left.startswith("character.") and left.endswith(".history"):
             name = left[len("character.") : -len(".history")]
             self.engine.remove_character_history(name, right)
             self.runtime_messages.append(f"character history removed: {name}")
+            return
+        if left.startswith("companion.") and left.endswith(".noticed_by"):
+            name = left[len("companion.") : -len(".noticed_by")]
+            self.engine.remove_companion_noticer(name, right)
+            self.runtime_messages.append(f"companion noticer removed: {name} -/-> {right}")
             return
         if left.endswith(".state"):
             role_name = left[:-6]
@@ -191,6 +215,11 @@ class CommandPipeline:
             self.engine.set_main_player(right)
             self.runtime_messages.append(f"global main_player set: {right}")
             return
+        if left == "global.team":
+            members = [name.strip() for name in right.split(",") if name.strip()]
+            self.engine.set_team_companions(members)
+            self.runtime_messages.append("global team replaced")
+            return
 
         if left.startswith("map.") and left.endswith(".valid"):
             node_name = left[len("map.") : -len(".valid")]
@@ -200,6 +229,9 @@ class CommandPipeline:
 
         if left.startswith("character."):
             self._apply_character_assign(left, right)
+            return
+        if left.startswith("companion."):
+            self._apply_companion_assign(left, right)
             return
 
         left_parts = left.split(".")
@@ -243,6 +275,14 @@ class CommandPipeline:
         if field == "escape":
             self.engine.attempt_escape(role_name, right)
             self.runtime_messages.append(f"escape success: {role_name} via {right}")
+            return
+        if field == "discover":
+            self.engine.discover_companion(role_name, right)
+            self.runtime_messages.append(f"discover success: {role_name} found {right}")
+            return
+        if field == "invite":
+            self.engine.invite_companion(role_name, right)
+            self.runtime_messages.append(f"invite success: {role_name} invited {right}")
             return
         if field == "health":
             self.engine.set_role_health(role_name, self._parse_float(right))
@@ -300,6 +340,30 @@ class CommandPipeline:
             return
         raise ValueError(f"unsupported character command: {left}={right}")
 
+    def _apply_companion_assign(self, left: str, right: str) -> None:
+        parts = left.split(".")
+        if len(parts) != 3:
+            raise ValueError(f"invalid companion command target: {left}")
+        _, name, field = parts
+        if field == "discovered":
+            self.engine.set_companion_discovered(name, self._parse_bool(right))
+            self.runtime_messages.append(f"companion discovered set: {name}")
+            return
+        if field == "in_team":
+            self.engine.set_companion_in_team(name, self._parse_bool(right))
+            self.runtime_messages.append(f"companion in_team set: {name}")
+            return
+        if field == "affection":
+            self.engine.set_companion_affection(name, self._parse_float(right))
+            self.runtime_messages.append(f"companion affection set: {name}")
+            return
+        if field == "noticed_by":
+            hostiles = [x.strip() for x in right.split(",") if x.strip()]
+            self.engine.set_companion_noticers(name, hostiles)
+            self.runtime_messages.append(f"companion noticed_by set: {name}")
+            return
+        raise ValueError(f"unsupported companion command: {left}={right}")
+
     def _set_runtime_unit_health(self, role_name: str, unit_id: str, value: float) -> None:
         player = self.engine.get_player(role_name)
         if unit_id not in player.active_units:
@@ -317,6 +381,12 @@ class CommandPipeline:
             self._assert_half_step(delta)
             self.engine.advance_time(delta)
             self.runtime_messages.append(f"time advanced: +{delta}")
+            return
+
+        if left.startswith("companion.") and left.endswith(".affection"):
+            name = left[len("companion.") : -len(".affection")]
+            self.engine.add_companion_affection(name, delta)
+            self.runtime_messages.append(f"companion affection changed: {name} ({delta:+g})")
             return
 
         left_parts = left.split(".")

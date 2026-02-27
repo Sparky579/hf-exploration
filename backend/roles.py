@@ -30,7 +30,7 @@ from __future__ import annotations
 from .constants import BASE_HOLY_WATER_PER_TIME
 from .global_config import GlobalConfig
 from .map_core import CampusMap
-from .units import DeployedUnit, NearbyUnitStatus, TargetKind, UnitCard, build_default_unit_cards
+from .units import DeployedUnit, NearbyUnitStatus, TargetKind, UnitCard, build_all_unit_cards, build_default_unit_cards
 
 
 class Role:
@@ -144,12 +144,12 @@ class PlayerRole(Role):
     ) -> None:
         super().__init__(name, campus_map, global_config, start_location, health=health)
         self.holy_water: float = 0.0
-        cards = available_cards if available_cards is not None else build_default_unit_cards()
+        cards = available_cards if available_cards is not None else build_all_unit_cards()
         self.available_cards: dict[str, UnitCard] = {card.name: card for card in cards}
         self.active_units: dict[str, DeployedUnit] = {}
         self._next_unit_seq = 1
 
-        default_deck = list(self.available_cards.keys())
+        default_deck = [card.name for card in build_default_unit_cards()]
         self.card_deck: list[str] = list(card_deck or default_deck)
         self.card_valid = int(card_valid)
         self._validate_deck()
@@ -167,6 +167,14 @@ class PlayerRole(Role):
         if not (1 <= int(value) <= 8):
             raise ValueError("card_valid must be between 1 and 8.")
         self.card_valid = int(value)
+
+    def set_card_deck(self, deck: list[str]) -> None:
+        if len(deck) != 8:
+            raise ValueError("card_deck must contain exactly 8 cards.")
+        for card_name in deck:
+            if card_name not in self.available_cards:
+                raise ValueError(f"unknown card in deck: {card_name}")
+        self.card_deck = list(deck)
 
     def playable_cards(self) -> list[str]:
         return list(self.card_deck[: self.card_valid])
