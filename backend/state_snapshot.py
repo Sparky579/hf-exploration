@@ -5,6 +5,7 @@ Module purpose:
 Functions:
 - build_step_context(...): package full step context (world, global, player, scene, logs, syntax).
 - extract_main_player_state(engine): package main player detail block.
+- extract_all_player_states(engine): package all runtime player states by name.
 - extract_scene_state(engine, node_name): package current scene detail and roles.
 """
 
@@ -41,6 +42,7 @@ def build_step_context(
     """Build the full context payload required for one LLM step."""
 
     main_player = extract_main_player_state(engine)
+    all_players = extract_all_player_states(engine)
     current_node = main_player["location"]
     scene_state = extract_scene_state(engine, current_node)
     sensing_scope = _build_sensing_scope(engine, current_node)
@@ -87,6 +89,7 @@ def build_step_context(
             "game_result": engine.game_result,
         },
         "main_player_state": main_player,
+        "players": all_players,
         "current_scene": scene_state,
         "character_profiles": character_profiles,
         "companions": companions,
@@ -142,6 +145,27 @@ def extract_main_player_state(engine: GameEngine) -> dict[str, Any]:
         "playable_cards": player.playable_cards(),
         "active_units": active_units,
     }
+
+
+def extract_all_player_states(engine: GameEngine) -> dict[str, dict[str, Any]]:
+    """Extract all runtime player states for hidden-thread planning."""
+
+    rows: dict[str, dict[str, Any]] = {}
+    for name, player in engine.players.items():
+        role = engine.get_role(name)
+        rows[name] = {
+            "name": name,
+            "health": role.health,
+            "holy_water": player.holy_water,
+            "location": role.current_location,
+            "moving": role.query_movement_status(),
+            "battle_target": role.battle_target,
+            "card_deck": list(player.card_deck),
+            "card_valid": player.card_valid,
+            "playable_cards": player.playable_cards(),
+            "active_unit_count": len(player.active_units),
+        }
+    return rows
 
 
 def extract_scene_state(engine: GameEngine, node_name: str) -> dict[str, Any]:

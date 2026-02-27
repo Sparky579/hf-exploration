@@ -40,6 +40,14 @@ def build_runtime() -> tuple[GameEngine, CommandPipeline]:
     Role("黎诺存", campus, cfg, "西教学楼南")
     Role("颜宏帆", campus, cfg, "东教学楼内部")
 
+    # Enemy runtime uses PlayerRole mechanics (holy water/deploy/card deck).
+    for name, profile in engine.character_profiles.items():
+        if "敌对" not in str(profile.alignment):
+            continue
+        if name not in campus.roles:
+            continue
+        engine.promote_role_to_player(name, card_deck=list(profile.card_deck), card_valid=4)
+
     pipeline = CommandPipeline(engine)
     pipeline.compile_line("[global.main_player=主控玩家]")
     return engine, pipeline
@@ -53,10 +61,12 @@ def play_loop(api_key: str, model: str) -> None:
     bridge = LLMAgentBridge(client)
     recent_turns = [
         "User: 开始游戏",
-        "System: 你在东教学楼内部，课堂正在进行，手机弹出超现实超级更新。",
+        "System: 你是向西中学的一名普通学生。最近，一款名为《皇室战争》的游戏在班级里掀起了狂热的风暴，即便是最严厉的课堂，也有人甘冒被抓的风险在课桌下偷偷沉迷于此，也包括你和你的好朋友罗宾，陈洛和马超鹏。\n枯燥的数学课上，老师正在讲解着复数的定义。这正如催眠曲般回荡。你埋下头偷偷按亮手机，一条爆炸性的消息突然跃入眼帘——好消息：《皇室战争：超现实大更新》！\n“超现实？”你盯着屏幕微微发愣，“这是什么意思？以前怎么从来没听说过这个版本？”\n尽管心中充满疑惑，但对新版本的好奇心犹如猫挠。你激动得掌心微汗，必须立刻决断，请选择：\n1. 流量更新\n2. 借马超鹏热点更新\n3. 不更新",
     ]
 
     print("游戏开始。输入自然语言行动；输入 `quit` 退出。")
+    print("\n[开场]")
+    print(recent_turns[1].replace("System: ", "", 1))
     while True:
         main = engine.get_player(engine.main_player_name or "主控玩家")
         role = engine.get_role(engine.main_player_name or "主控玩家")

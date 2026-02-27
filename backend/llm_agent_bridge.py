@@ -137,6 +137,7 @@ class LLMAgentBridge:
                 source="Enemy",
                 allow_time_advance=False,
             )
+            self._flush_enemy_queue_if_needed(pipeline, enemy_commands, applied, errors)
             for item in due_enemy_triggers:
                 try:
                     pipeline.engine.global_config.mark_trigger_handled(int(item["id"]))
@@ -350,6 +351,27 @@ class LLMAgentBridge:
                 applied.append(line)
             except Exception as exc:
                 errors.append(f"{source} command failed: {line} -> {exc}")
+
+    @staticmethod
+    def _flush_enemy_queue_if_needed(
+        pipeline: CommandPipeline,
+        enemy_commands: list[str],
+        applied: list[str],
+        errors: list[str],
+    ) -> None:
+        """Ensure enemy move/deploy queue actions are executed in this round."""
+
+        if not enemy_commands:
+            return
+        has_queue_action = any(".move=" in line or ".deploy=" in line for line in enemy_commands)
+        has_explicit_flush = any(line.strip() == "queue.flush=true" for line in enemy_commands)
+        if (not has_queue_action) or has_explicit_flush:
+            return
+        try:
+            pipeline.compile_line("queue.flush=true")
+            applied.append("queue.flush=true")
+        except Exception as exc:
+            errors.append(f"Enemy auto queue.flush failed: {exc}")
 
     @staticmethod
     def _flatten_commands(text: str) -> list[str]:

@@ -38,6 +38,8 @@ Immediate state commands:
 - `<role>.holy_water=<number>`
 - `<role>.battle=<target_role_name|none>`
 - `<role>.card_valid=<int>`
+- `<role>.card_deck=<card1,...,card8>`
+- `<role>.deck=<card1,...,card8>`
 - `<role>.nearby_units=<unitA:full,unitB:damaged>`
 - `<role>.nearby_unit.<unit_name>=<full|damaged|dead>`
 - `<role>.unit.<unit_id>.health=<number>` (<=0 means dead, remove from active list)
@@ -388,6 +390,11 @@ class CommandPipeline:
             player.set_card_valid(int(right))
             self.runtime_messages.append(f"card_valid set: {role_name} -> {right}")
             return
+        if field in ("card_deck", "deck"):
+            deck = [x.strip() for x in right.split(",") if x.strip()]
+            self.engine.set_player_card_deck(role_name, deck)
+            self.runtime_messages.append(f"card_deck set: {role_name}")
+            return
         if field == "nearby_units":
             self._assert_role_location_valid_for_internal_action(role_name, "nearby_units")
             role.replace_nearby_units(self._parse_nearby_units(right))
@@ -418,9 +425,15 @@ class CommandPipeline:
             return
         if field == "deck":
             deck = [x.strip() for x in right.split(",") if x.strip()]
-            self.engine.set_character_deck(name, deck)
-            self.runtime_messages.append(f"character deck set: {name}")
-            return
+            if name in self.engine.character_profiles:
+                self.engine.set_character_deck(name, deck)
+                self.runtime_messages.append(f"character deck set: {name}")
+                return
+            if name in self.engine.players:
+                self.engine.set_player_card_deck(name, deck)
+                self.runtime_messages.append(f"player card_deck set via character alias: {name}")
+                return
+            raise KeyError(f"character profile not found: {name}")
         if field == "description":
             self.engine.set_character_description(name, right)
             self.runtime_messages.append(f"character description set: {name}")

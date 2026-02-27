@@ -157,9 +157,8 @@ class PlayerRole(Role):
     def _validate_deck(self) -> None:
         if len(self.card_deck) != 8:
             raise ValueError("card_deck must contain exactly 8 cards.")
-        for card_name in self.card_deck:
-            if card_name not in self.available_cards:
-                raise ValueError(f"card_deck contains unknown card: {card_name}")
+        for idx, card_name in enumerate(self.card_deck):
+            self.card_deck[idx] = self._resolve_known_card_name(card_name)
         if not (1 <= self.card_valid <= 8):
             raise ValueError("card_valid must be between 1 and 8.")
 
@@ -171,10 +170,8 @@ class PlayerRole(Role):
     def set_card_deck(self, deck: list[str]) -> None:
         if len(deck) != 8:
             raise ValueError("card_deck must contain exactly 8 cards.")
-        for card_name in deck:
-            if card_name not in self.available_cards:
-                raise ValueError(f"unknown card in deck: {card_name}")
-        self.card_deck = list(deck)
+        normalized = [self._resolve_known_card_name(name) for name in deck]
+        self.card_deck = normalized
 
     def playable_cards(self) -> list[str]:
         return list(self.card_deck[: self.card_valid])
@@ -198,8 +195,7 @@ class PlayerRole(Role):
         return self.holy_water
 
     def deploy_unit(self, unit_name: str, node_name: str | None = None) -> DeployedUnit:
-        if unit_name not in self.available_cards:
-            raise KeyError(f"unit card not found: {unit_name}")
+        unit_name = self._resolve_known_card_name(unit_name)
 
         card = self.available_cards[unit_name]
         if self.holy_water < card.consume:
@@ -227,12 +223,24 @@ class PlayerRole(Role):
 
     def deploy_from_deck(self, card_name: str | None = None, node_name: str | None = None) -> DeployedUnit:
         candidates = self.playable_cards()
-        chosen = card_name or candidates[0]
+        if not candidates:
+            raise ValueError("no playable cards in current deck window.")
+        chosen = self._resolve_known_card_name(card_name) if card_name else candidates[0]
         if chosen not in candidates:
             raise ValueError(f"card is not currently playable: {chosen}")
         deployed = self.deploy_unit(chosen, node_name=node_name)
         self.rotate_card_deck()
         return deployed
+
+    def _resolve_known_card_name(self, raw_name: str) -> str:
+        text = str(raw_name).strip()
+        if text in self.available_cards:
+            return text
+        compact = "".join(text.split())
+        for name in self.available_cards:
+            if "".join(name.split()) == compact:
+                return name
+        raise ValueError(f"unknown card: {raw_name}")
 
     def remove_unit(self, unit_id: str) -> None:
         if unit_id in self.active_units:

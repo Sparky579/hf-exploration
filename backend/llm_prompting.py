@@ -38,8 +38,19 @@ def build_narrative_prompt(context: dict[str, Any]) -> str:
    其单位默认视作在主控身旁。
 9. 若角色已入队、已死亡或已离场，不得重复“发现/邀请”。
 10. 你会收到 N 到 N+1.5 的 trigger 窗口。可以据此判断主角是否“听到端倪”，
-    但只能叙述主角当前地点及相邻地点范围内可感知的信息，不得越距感知。
-11. 输出结构固定为：
+11. 你的叙事视角必须极度受限（仅限主控玩家的主观感知）：
+    - 你**绝对不知道**其他角色脑子里在想什么，不知道他们在视线外的任何行动。在混乱的环境中，主控玩家也不可能精准注意到其他角色的“微小动作”、“偷偷摸摸的计划”或“精确的施法前摇”。
+    - **绝对禁止上帝视角描述**！只能描述玩家亲眼看到的大场面、听到的声音、和必须应对的危机。其他角色除非主动跟玩家互动或施放大范围法术，否则他们的行动对玩家来说就是一团迷雾。
+    - 主控玩家最初并不知道“超现实”是什么，对于游戏中突发的超自然现象（如凭空出现的卡牌怪物）应当表现出常人的极度震惊与不可理解，而不是理所当然地接受。
+12. 提供的【选项】应当是基于常理的常规行动或者是当前事件必须要做的抉择。
+    - **必须【至少】将当前所在地点所有相邻连通的行进或逃跑路线，作为明确的独立选项提供给玩家**（可参考上下文里的 `connected_nodes`）。
+    - **如果玩家已经拥有卡组（`card_deck`非空）且处于战斗或危机状态，必须将其圣水（`holy_water`）足够支付出牌费用的前几张卡牌，转换为明确的“下卡牌”选项提供给玩家**。
+    - **如果队伍中有能出牌的友军（如罗宾），也必须随时关注其圣水是否足够，若足够，应提供指令罗宾出牌的选项**。
+    - **所有行动选项必须是【单步动作】（如“跑向某地”、“打出一张卡牌”），绝对不要提供一长串连贯动作的选项**，复杂的后续动作留给玩家自己补充或按特定节奏推进。
+    - **绝对不要把单纯的“停在原地观察/环顾四周”作为明确选项提供给玩家**。普通人在混乱中很难凭借肉眼观察得出什么新情报（除非有人走脸或者有轰天巨响）。如果玩家真想观察，让他们自己在“其他行动”里输。
+    - 不要主动向玩家暴露“极其偏门/难以想到/超出常理”的神仙操作（即使代码机制允许）。那些留给玩家自己去输入发掘。
+    - 选项的最后一条始终保留为：x. 其他任何你想做的事（直接输入动作）。
+13. 输出结构固定为：
    【剧情】
    [command]
    [命令1]
@@ -48,7 +59,7 @@ def build_narrative_prompt(context: dict[str, Any]) -> str:
    【选项】
    1. ...
    2. ...
-   3. ...
+   x. 其他任何你想做的事（直接输入行动）
 """
     payload = json.dumps(context, ensure_ascii=False, indent=2)
     return f"{rules}\n\n以下是本轮上下文JSON：\n```json\n{payload}\n```"
@@ -64,6 +75,7 @@ def build_enemy_initial_trigger_prompt(context: dict[str, Any], enemy_roles: lis
 1. 仅输出 [command]...[/command] 命令块。
    并且每条命令必须写成方括号格式：[trigger.add=...]
 2. 只允许使用 trigger.add / character.<name>.history+= / global.state+= 这类命令。
+2.5. `enemy_runtime` 提供敌对角色实时状态（含 holy_water），你必须据此安排可执行行动。
 3. 每个存活敌对角色都必须至少创建一条第一步 trigger：
    trigger.add=角色:<角色名>|时间<数字> 若<条件> 则<结果>
 4. 结果描述需简短且可执行，后续会由另一个隐藏线程在触发时处理。
@@ -72,6 +84,7 @@ def build_enemy_initial_trigger_prompt(context: dict[str, Any], enemy_roles: lis
     mini_context = {
         "enemy_roles": enemy_roles,
         "global_state": context["global_state"],
+        "enemy_runtime": {name: context.get("players", {}).get(name, {}) for name in enemy_roles},
         "character_profiles": {k: v for k, v in context["character_profiles"].items() if k in enemy_roles},
         "recent_command_logs": context["recent_command_logs"],
         "console_syntax": context["console_syntax"],
@@ -95,6 +108,7 @@ def build_enemy_trigger_prompt(
    并且每条命令必须写成方括号格式：[map.东教学楼内部.valid=false]
 2. 不允许使用 time.advance（时间推进由主线程控制）。
 3. 只处理 fired_enemy_triggers 里给出的 trigger，不得越权处理其他角色。
+3.5. 你会收到 `enemy_runtime`，里面有敌对角色当前 holy_water/卡组/位置；部署行为必须满足圣水条件。
 4. 每处理完一个敌对角色触发器，都要确保该角色有下一条 future trigger：
    trigger.add=角色:<角色名>|时间<数字> 若<条件> 则<结果>
    例外：仅当角色死亡/离场，或明确进入“持续原地不动”状态时可不再追加。
@@ -102,11 +116,13 @@ def build_enemy_trigger_prompt(
    event.rocket_launch=<建筑名>
    然后可追加 history/global.state 提示。
 6. 命令必须保持可执行、可复现、单步语义清晰。
+7. 若命令中出现 `<role>.move=` 或 `<role>.deploy=`，同一命令块末尾必须追加 `[queue.flush=true]`。
 """
     mini_context = {
         "enemy_roles": enemy_roles,
         "fired_enemy_triggers": fired_enemy_triggers,
         "global_state": context["global_state"],
+        "enemy_runtime": {name: context.get("players", {}).get(name, {}) for name in enemy_roles},
         "current_scene": context["current_scene"],
         "character_profiles": {k: v for k, v in context["character_profiles"].items() if k in enemy_roles},
         "console_syntax": context["console_syntax"],

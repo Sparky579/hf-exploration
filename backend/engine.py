@@ -13,6 +13,7 @@ Class:
   - set_node_valid/attempt_escape: map state and story escape handling.
   - role/player state write APIs.
   - set_main_game_state: state machine for main player's game install status.
+  - set_player_card_deck/promote_role_to_player: player-deck writes and role->player runtime promotion.
   - character profile APIs.
   - companion APIs: discover/invite/remove/team/affection/noticer.
 """
@@ -203,6 +204,53 @@ class GameEngine:
     def set_main_game_state(self, state: str) -> None:
         self.global_config.set_main_game_state(state)
         self._enforce_main_player_holy_water_gate()
+
+    def set_player_card_deck(self, player_name: str, deck: list[str]) -> None:
+        self.get_player(player_name).set_card_deck(deck)
+
+    def promote_role_to_player(
+        self,
+        role_name: str,
+        card_deck: list[str] | None = None,
+        card_valid: int = 4,
+    ) -> PlayerRole:
+        """
+        Promote an existing map role into a player role while keeping same name/location.
+
+        This is used by runtime scripts so hostile roles can share the same holy-water
+        and card-deploy rules as players.
+        """
+
+        if role_name in self.players:
+            return self.players[role_name]
+        old_role = self.get_role(role_name)
+        old_node = old_role.current_location
+        old_health = old_role.health
+        old_battle_target = old_role.battle_target
+        old_dynamic = old_role.list_dynamic_states()
+        old_nearby = old_role.list_nearby_units()
+
+        self.campus_map.get_node(old_node).remove_role(role_name)
+        del self.campus_map.roles[role_name]
+        if role_name in self._movement_tasks:
+            del self._movement_tasks[role_name]
+
+        promoted = PlayerRole(
+            name=role_name,
+            campus_map=self.campus_map,
+            global_config=self.global_config,
+            start_location=old_node,
+            card_deck=card_deck,
+            card_valid=card_valid,
+            health=old_health,
+        )
+        if old_battle_target:
+            promoted.set_battle_target(old_battle_target)
+        for text in old_dynamic:
+            promoted.add_dynamic_state(text)
+        promoted.replace_nearby_units(old_nearby)
+        self.register_player(promoted)
+        return promoted
 
     def set_character_status(self, name: str, status: str) -> None:
         self.get_character_profile(name).set_status(status)

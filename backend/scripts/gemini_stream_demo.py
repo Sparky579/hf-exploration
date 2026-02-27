@@ -42,6 +42,14 @@ def build_demo_runtime() -> tuple[GameEngine, CommandPipeline]:
     Role("黎诺存", campus, cfg, "西教学楼南")
     Role("颜宏帆", campus, cfg, "东教学楼内部")
 
+    # Enemy runtime uses PlayerRole mechanics (holy water/deploy/card deck).
+    for name, profile in engine.character_profiles.items():
+        if "敌对" not in str(profile.alignment):
+            continue
+        if name not in campus.roles:
+            continue
+        engine.promote_role_to_player(name, card_deck=list(profile.card_deck), card_valid=4)
+
     pipeline = CommandPipeline(engine)
     pipeline.compile_line("global.main_player=主控玩家")
     pipeline.compile_line("trigger.add=角色:颜宏帆|时间0.5 若颜宏帆在教室 则 颜宏帆下出小骷髅")
