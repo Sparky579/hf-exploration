@@ -52,8 +52,8 @@ def play_loop(api_key: str, model: str) -> None:
     client = GeminiClient(api_key=api_key, model=model)
     bridge = LLMAgentBridge(client)
     recent_turns = [
-        "用户：开始游戏",
-        "系统：你在东教学楼内部，课堂正在进行，手机弹出超现实超级更新。",
+        "User: 开始游戏",
+        "System: 你在东教学楼内部，课堂正在进行，手机弹出超现实超级更新。",
     ]
 
     print("游戏开始。输入自然语言行动；输入 `quit` 退出。")
@@ -94,7 +94,7 @@ def play_loop(api_key: str, model: str) -> None:
             system_text = str(final_packet.get("main_text", "")).strip()
             if len(system_text) > 220:
                 system_text = system_text[:220] + "..."
-            recent_turns = [*recent_turns[-2:], f"用户：{user_input}", f"系统：{system_text}"]
+            recent_turns = [*recent_turns[-2:], f"User: {user_input}", f"System: {system_text}"]
 
         if engine.game_over:
             print(f"\n[结束] 游戏结束，结果={engine.game_result}")

@@ -56,7 +56,7 @@ def main() -> None:
     context = build_step_context(
         engine=engine,
         pipeline=pipeline,
-        recent_user_turns=["用户：先观察", "系统：你在教学楼里。"],
+        recent_user_turns=["User: 先观察", "System: 你在教学楼里。"],
         current_user_input="我先观察周围。",
     )
     for key in (

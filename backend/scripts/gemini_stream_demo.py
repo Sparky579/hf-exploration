@@ -65,8 +65,8 @@ def main() -> None:
     bridge = LLMAgentBridge(client)
 
     recent_turns = [
-        "用户：我现在在东教学楼内部，先别乱动。",
-        "系统：你看到课堂正常进行，手机弹出超现实超级更新提示。",
+        "User: 我现在在东教学楼内部，先别乱动。",
+        "System: 你看到课堂正常进行，手机弹出超现实超级更新提示。",
     ]
 
     final_packet = None
