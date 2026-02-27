@@ -346,6 +346,9 @@ class LLMAgentBridge:
         for line in commands:
             if (not allow_time_advance) and line.startswith("time.advance"):
                 continue
+            if LLMAgentBridge._is_forbidden_holy_water_command(source, line):
+                errors.append(f"{source} command blocked: {line} -> holy_water is system-managed")
+                continue
             try:
                 pipeline.compile_line(line)
                 applied.append(line)
@@ -372,6 +375,17 @@ class LLMAgentBridge:
             applied.append("queue.flush=true")
         except Exception as exc:
             errors.append(f"Enemy auto queue.flush failed: {exc}")
+
+    @staticmethod
+    def _is_forbidden_holy_water_command(source: str, line: str) -> bool:
+        """
+        For model-generated commands, holy water is runtime-managed by time/deploy rules.
+        """
+
+        if source not in ("Narrative", "Enemy", "EnemyInit"):
+            return False
+        normalized = line.strip().lower()
+        return ".holy_water" in normalized
 
     @staticmethod
     def _flatten_commands(text: str) -> list[str]:

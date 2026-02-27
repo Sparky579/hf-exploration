@@ -328,7 +328,7 @@ class CommandPipeline:
             raise ValueError(f"invalid target: {left}")
         role_name = left_parts[0]
         field = left_parts[1]
-        role = self.engine.get_role(role_name)
+        role = self.engine.ensure_runtime_role(role_name)
 
         if field == "move":
             self.message_queue.append(

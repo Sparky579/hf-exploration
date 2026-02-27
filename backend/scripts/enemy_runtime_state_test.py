@@ -10,6 +10,7 @@ Checks:
 2. `character.主控玩家.deck=...` updates player deck without profile lookup error.
 3. Main-player install gate blocks holy-water regen while enemy regen still works.
 4. Battle+emergency multipliers apply to enemy holy-water regen.
+5. Companion location command lazily creates missing companion runtime role.
 """
 
 from __future__ import annotations
@@ -49,6 +50,9 @@ def main() -> None:
     assert_equal(enemy_player.name, "李再斌", "enemy should be promoted into player runtime")
 
     pipe = CommandPipeline(engine)
+
+    pipe.compile_line("[马超鹏.location=东教学楼南]")
+    assert_equal(engine.get_role("马超鹏").current_location, "东教学楼南", "companion role should lazy-create")
 
     # Alias command should update player deck, and card names with accidental spaces should be normalized.
     phone_deck = engine.get_character_profile("马超鹏").card_deck

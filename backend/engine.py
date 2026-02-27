@@ -14,6 +14,7 @@ Class:
   - role/player state write APIs.
   - set_main_game_state: state machine for main player's game install status.
   - set_player_card_deck/promote_role_to_player: player-deck writes and role->player runtime promotion.
+  - ensure_runtime_role: lazy-create companion runtime role when command targets it.
   - character profile APIs.
   - companion APIs: discover/invite/remove/team/affection/noticer.
 """
@@ -84,6 +85,18 @@ class GameEngine:
         if role_name not in self.campus_map.roles:
             raise KeyError(f"role not found: {role_name}")
         return self.campus_map.roles[role_name]
+
+    def ensure_runtime_role(self, role_name: str) -> Role:
+        """Get one runtime role, lazily creating companion roles at home node if missing."""
+
+        if role_name in self.campus_map.roles:
+            return self.campus_map.roles[role_name]
+        if role_name in self.companion_profiles:
+            profile = self.get_companion_profile(role_name)
+            if not self.campus_map.is_node_valid(profile.home_node):
+                raise ValueError(f"companion home node is destroyed: {profile.home_node}")
+            return Role(role_name, self.campus_map, self.global_config, profile.home_node)
+        raise KeyError(f"role not found: {role_name}")
 
     def get_player(self, player_name: str) -> PlayerRole:
         if player_name not in self.players:
