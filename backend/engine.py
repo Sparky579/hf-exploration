@@ -12,6 +12,7 @@ Class:
   - set_emergency_phase/set_battle_phase/set_battle_state: global phase state writes.
   - set_node_valid/attempt_escape: map state and story escape handling.
   - role/player state write APIs.
+  - set_main_game_state: state machine for main player's game install status.
   - character profile APIs.
   - companion APIs: discover/invite/remove/team/affection/noticer.
 """
@@ -76,6 +77,7 @@ class GameEngine:
     def set_main_player(self, player_name: str) -> None:
         self.get_player(player_name)
         self.main_player_name = player_name
+        self._enforce_main_player_holy_water_gate()
 
     def get_role(self, role_name: str) -> Role:
         if role_name not in self.campus_map.roles:
@@ -192,7 +194,15 @@ class GameEngine:
         player = self.get_player(player_name)
         if value < 0:
             raise ValueError("holy_water must be >= 0.")
+        if self.main_player_name is not None and player_name == self.main_player_name:
+            if not self.global_config.can_main_player_gain_holy_water:
+                player.holy_water = 0.0
+                return
         player.holy_water = float(value)
+
+    def set_main_game_state(self, state: str) -> None:
+        self.global_config.set_main_game_state(state)
+        self._enforce_main_player_holy_water_gate()
 
     def set_character_status(self, name: str, status: str) -> None:
         self.get_character_profile(name).set_status(status)
@@ -383,7 +393,11 @@ class GameEngine:
             del self._movement_tasks[task.role_name]
 
     def _regenerate_players(self, amount: float) -> None:
-        for player in self.players.values():
+        for name, player in self.players.items():
+            if self.main_player_name is not None and name == self.main_player_name:
+                if not self.global_config.can_main_player_gain_holy_water:
+                    player.holy_water = 0.0
+                    continue
             player.regenerate_holy_water(amount)
 
     def _companion_holy_water_rate_per_time(self) -> float:
@@ -464,3 +478,10 @@ class GameEngine:
         if main_role.health <= 0:
             self.game_over = True
             self.game_result = "main_player_dead"
+
+    def _enforce_main_player_holy_water_gate(self) -> None:
+        if self.main_player_name is None:
+            return
+        if self.global_config.can_main_player_gain_holy_water:
+            return
+        self.get_player(self.main_player_name).holy_water = 0.0

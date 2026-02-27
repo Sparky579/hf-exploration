@@ -72,6 +72,8 @@ def build_step_context(
             "states": list(engine.global_config.global_states),
             "dynamic_states": list(engine.global_config.dynamic_states),
             "battle_state": engine.global_config.battle_state,
+            "main_game_state": engine.global_config.main_game_state,
+            "can_main_player_gain_holy_water": engine.global_config.can_main_player_gain_holy_water,
             "main_player": engine.main_player_name,
             "team_companions": engine.global_config.list_team_companions(),
             "scripted_triggers": engine.global_config.list_scripted_triggers(),

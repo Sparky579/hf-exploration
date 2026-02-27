@@ -15,6 +15,8 @@ Class:
   - trigger helper APIs: mark fired/handled, query future triggers by owner.
   - list_triggers_until(end_time): query trigger rows in [current_time, end_time].
   - get_latest_trigger_time_for_owner(owner): query latest trigger time for one owner.
+  - set_main_game_state(state): set main-player game install/download/device status.
+  - can_main_player_gain_holy_water property: whether main player can regenerate holy water.
 """
 
 from __future__ import annotations
@@ -28,12 +30,20 @@ from .constants import PHASE_BATTLE, PHASE_EMERGENCY
 class GlobalConfig:
     """Global runtime config for timeline and world states."""
 
+    MAIN_GAME_STATES = {
+        "installed",
+        "downloading",
+        "not_installed",
+        "confiscated",
+    }
+
     def __init__(
         self,
         current_time_unit: float = 0.0,
         global_states: list[str] | None = None,
         dynamic_states: list[str] | None = None,
         battle_state: str | None = None,
+        main_game_state: str = "installed",
     ) -> None:
         self._current_time_unit = 0.0
         self.current_time_unit = current_time_unit
@@ -42,6 +52,8 @@ class GlobalConfig:
         self.battle_state: str | None = None
         if battle_state is not None:
             self.set_battle_state(battle_state)
+        self.main_game_state: str = "installed"
+        self.set_main_game_state(main_game_state)
 
         # Fixed-format companion runtime store in global config.
         self.companions: dict[str, dict[str, Any]] = {}
@@ -127,6 +139,18 @@ class GlobalConfig:
     @property
     def is_battle_phase(self) -> bool:
         return self.battle_state is not None
+
+    @property
+    def can_main_player_gain_holy_water(self) -> bool:
+        return self.main_game_state == "installed"
+
+    def set_main_game_state(self, state: str) -> None:
+        normalized = self._normalize_main_game_state(state)
+        if normalized not in self.MAIN_GAME_STATES:
+            raise ValueError(
+                "main_game_state must be one of: installed/downloading/not_installed/confiscated"
+            )
+        self.main_game_state = normalized
 
     def init_companion_registry(self, profiles: dict[str, Any]) -> None:
         """Initialize companion runtime data with a fixed storage format."""
@@ -353,6 +377,27 @@ class GlobalConfig:
         number = re.search(r"([0-9]+(?:\.[0-9]+)?)", text)
         trigger_time = float(number.group(1)) if number else 0.0
         return trigger_time, "default_condition", text
+
+    @staticmethod
+    def _normalize_main_game_state(raw: str) -> str:
+        text = str(raw).strip().lower()
+        mapping = {
+            "installed": "installed",
+            "ready": "installed",
+            "安装完成": "installed",
+            "已安装": "installed",
+            "下载中": "downloading",
+            "downloading": "downloading",
+            "updating": "downloading",
+            "not_installed": "not_installed",
+            "未安装": "not_installed",
+            "未下载": "not_installed",
+            "confiscated": "confiscated",
+            "没收": "confiscated",
+            "手机被收": "confiscated",
+            "no_phone": "confiscated",
+        }
+        return mapping.get(text, text)
 
     def _find_same_trigger(
         self,

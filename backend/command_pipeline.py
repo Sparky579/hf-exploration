@@ -27,6 +27,7 @@ Immediate state commands:
 - `global.battle=<target_role_name|none|true|false>`
 - `global.emergency=<true|false>`
 - `global.main_player=<player_name>`
+- `global.main_game_state=<installed|downloading|not_installed|confiscated>`
 - `global.team=<name1,name2,...>`
 - `map.<node>.valid=<true|false>`
 - `<role>.location=<node>`
@@ -269,6 +270,10 @@ class CommandPipeline:
         if left == "global.main_player":
             self.engine.set_main_player(right)
             self.runtime_messages.append(f"global main_player set: {right}")
+            return
+        if left in ("global.main_game_state", "global.phone_state", "global.client_state"):
+            self.engine.set_main_game_state(right)
+            self.runtime_messages.append(f"{left} set: {right}")
             return
         if left == "global.team":
             members = [name.strip() for name in right.split(",") if name.strip()]
