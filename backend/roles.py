@@ -6,6 +6,9 @@ Classes:
 - Role
   - query_current_location(): return role's current node.
   - query_movement_status(): return moving state plus from/to fields.
+  - add_dynamic_state(text): append one dynamic runtime string for this role.
+  - remove_dynamic_state(text): remove one dynamic runtime string for this role.
+  - list_dynamic_states(): return role dynamic runtime strings.
   - _start_move(target): internal helper called by engine when move begins.
   - _finish_move(target): internal helper called by engine when move ends.
 - PlayerRole (extends Role)
@@ -41,6 +44,7 @@ class Role:
         self._global_config = global_config
         self._current_location = start_location
         self._moving_to: str | None = None
+        self.dynamic_states: list[str] = []
         self._campus_map.add_role(self, start_location)
 
     @property
@@ -61,6 +65,19 @@ class Role:
             "from": self._current_location,
             "to": self._moving_to,
         }
+
+    def add_dynamic_state(self, text: str) -> None:
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("dynamic state text must be a non-empty string.")
+        if text not in self.dynamic_states:
+            self.dynamic_states.append(text)
+
+    def remove_dynamic_state(self, text: str) -> None:
+        if text in self.dynamic_states:
+            self.dynamic_states.remove(text)
+
+    def list_dynamic_states(self) -> list[str]:
+        return list(self.dynamic_states)
 
     def _start_move(self, target_node_name: str) -> None:
         self._moving_to = target_node_name

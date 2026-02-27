@@ -8,6 +8,7 @@ Functions:
 - test_holy_water_regen(engine, cfg, p1): verify 1x/2x/4x/8x holy-water rates.
 - test_wartime_units_cleanup(engine, cfg, p1): verify wartime units are removed after battle ends.
 - test_target_selection(p1): verify target-priority and manual-target rules.
+- test_dynamic_states(engine, cfg, p1): verify global/role dynamic state APIs.
 - main(): build objects, run all tests, print PASS if all checks pass.
 """
 
@@ -32,7 +33,7 @@ def test_parallel_movement(engine: GameEngine, p1: PlayerRole, p2: PlayerRole) -
     engine.issue_move("P1", "南教学楼")
     engine.issue_move("P2", "图书馆")
     assert_equal((p1.current_location, p2.current_location), ("东教学楼南", "西教学楼南"), "move should be queued")
-    engine.advance_time(0.5)
+    engine.advance_time(1)
     assert_equal((p1.current_location, p2.current_location), ("南教学楼", "图书馆"), "parallel move result")
 
 
@@ -85,6 +86,15 @@ def test_target_selection(p1: PlayerRole) -> None:
     assert_equal((kind2, target_id2), ("enemy_npc", "npc1"), "manual target when combat targets are empty")
 
 
+def test_dynamic_states(engine: GameEngine, cfg: GlobalConfig, p1: PlayerRole) -> None:
+    global_text = "全局动态：今日下雨"
+    role_text = "角色动态：正在警戒"
+    engine.add_global_dynamic_state(global_text)
+    engine.add_role_dynamic_state("P1", role_text)
+    assert_equal(global_text in cfg.list_dynamic_states(), True, "global dynamic state should exist")
+    assert_equal(role_text in p1.list_dynamic_states(), True, "role dynamic state should exist")
+
+
 def main() -> None:
     campus = build_default_campus_map()
     cfg = GlobalConfig()
@@ -98,6 +108,7 @@ def main() -> None:
     test_holy_water_regen(engine, cfg, p1)
     test_wartime_units_cleanup(engine, cfg, p1)
     test_target_selection(p1)
+    test_dynamic_states(engine, cfg, p1)
     print("PASS: backend smoke tests")
 
 

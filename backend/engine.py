@@ -10,6 +10,8 @@ Class:
   - register_player(player): register a player for automatic holy-water regeneration.
   - issue_move(role_name, target_node_name): enqueue one edge movement for role.
   - advance_time(amount): the only API that advances time and resolves all queued systems.
+  - add_global_dynamic_state(text): append one dynamic runtime string to global config.
+  - add_role_dynamic_state(role_name, text): append one dynamic runtime string to a role.
   - set_emergency_phase(enabled): toggle emergency global state.
   - set_battle_phase(enabled): toggle battle state and clear wartime units on battle end.
   - _progress_movements(amount): internal movement simulation update.
@@ -85,6 +87,15 @@ class GameEngine:
 
     def set_emergency_phase(self, enabled: bool) -> None:
         self.global_config.set_state(PHASE_EMERGENCY, enabled)
+
+    def add_global_dynamic_state(self, text: str) -> None:
+        self.global_config.add_dynamic_state(text)
+
+    def add_role_dynamic_state(self, role_name: str, text: str) -> None:
+        if role_name not in self.campus_map.roles:
+            raise KeyError(f"role not found: {role_name}")
+        role = self.campus_map.roles[role_name]
+        role.add_dynamic_state(text)
 
     def set_battle_phase(self, enabled: bool) -> None:
         was_battle = self.global_config.is_battle_phase

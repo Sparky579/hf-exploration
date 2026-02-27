@@ -9,7 +9,7 @@ Exposed symbols:
 - PHASE_BATTLE: Global state key for battle phase.
 """
 
-MOVE_TIME_COST = 0.5
+MOVE_TIME_COST = 1.0
 BASE_HOLY_WATER_PER_TIME = 0.5  # +1 holy water per 2 time units
 
 PHASE_EMERGENCY = "emergency"
