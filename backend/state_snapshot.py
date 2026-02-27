@@ -17,6 +17,20 @@ from .command_pipeline import CommandPipeline
 from .engine import GameEngine
 from .narrative_assets import build_world_base_setting, get_scene_paragraph
 
+BUILDING_NODE_MAP: dict[str, list[str]] = {
+    "东教学楼": ["东教学楼南", "东教学楼内部", "东教学楼北"],
+    "西教学楼": ["西教学楼南", "西教学楼北"],
+    "南教学楼": ["南教学楼"],
+    "德政楼": ["德政楼"],
+    "图书馆": ["图书馆"],
+    "国际部": ["国际部"],
+    "宿舍": ["宿舍"],
+    "食堂": ["食堂"],
+    "体育馆": ["体育馆"],
+    "生化楼": ["生化楼"],
+    "田径场": ["田径场"],
+}
+
 
 def build_step_context(
     engine: GameEngine,
@@ -29,6 +43,7 @@ def build_step_context(
     main_player = extract_main_player_state(engine)
     current_node = main_player["location"]
     scene_state = extract_scene_state(engine, current_node)
+    sensing_scope = _build_sensing_scope(engine, current_node)
 
     syntax_path = Path(__file__).resolve().parent / "docs" / "pipeline_syntax.md"
     syntax_text = syntax_path.read_text(encoding="utf-8") if syntax_path.exists() else ""
@@ -61,6 +76,10 @@ def build_step_context(
             "team_companions": engine.global_config.list_team_companions(),
             "scripted_triggers": engine.global_config.list_scripted_triggers(),
             "fired_unhandled_triggers": engine.global_config.list_fired_unhandled_triggers(),
+            "trigger_window_n_to_n_plus_1_5": engine.global_config.list_triggers_until(
+                end_time=float(engine.global_config.current_time_unit) + 1.5,
+                include_handled=False,
+            ),
             "recent_trigger_history": engine.event_checker.recent_trigger_history(15),
             "game_over": engine.game_over,
             "game_result": engine.game_result,
@@ -74,6 +93,15 @@ def build_step_context(
         "console_syntax": syntax_text,
         "recent_command_logs": pipeline.get_recent_logs(15),
         "queue_length": len(pipeline.message_queue),
+        "main_player_sensing_scope": sensing_scope,
+        "nearby_trigger_hints": _collect_nearby_trigger_hints(
+            engine=engine,
+            triggers=engine.global_config.list_triggers_until(
+                end_time=float(engine.global_config.current_time_unit) + 1.5,
+                include_handled=False,
+            ),
+            sensing_scope=sensing_scope,
+        ),
     }
     return payload
 
@@ -149,3 +177,48 @@ def extract_scene_state(engine: GameEngine, node_name: str) -> dict[str, Any]:
         "scene_paragraph": get_scene_paragraph(node.name),
         "roles": scene_roles,
     }
+
+
+def _build_sensing_scope(engine: GameEngine, center_node: str) -> dict[str, Any]:
+    neighbors = sorted(engine.campus_map.get_node(center_node).neighbors)
+    return {
+        "center_node": center_node,
+        "nearby_nodes": [center_node, *neighbors],
+    }
+
+
+def _collect_nearby_trigger_hints(
+    engine: GameEngine,
+    triggers: list[dict[str, Any]],
+    sensing_scope: dict[str, Any],
+) -> list[dict[str, Any]]:
+    nearby_nodes = set(sensing_scope["nearby_nodes"])
+    rows: list[dict[str, Any]] = []
+    for item in triggers:
+        if _is_trigger_nearby(engine, item, nearby_nodes):
+            rows.append(dict(item))
+    rows.sort(key=lambda x: (float(x["trigger_time"]), int(x["id"])))
+    return rows
+
+
+def _is_trigger_nearby(
+    engine: GameEngine,
+    trigger: dict[str, Any],
+    nearby_nodes: set[str],
+) -> bool:
+    owner = str(trigger.get("owner", ""))
+    if owner in engine.campus_map.roles:
+        owner_node = engine.get_role(owner).current_location
+        if owner_node in nearby_nodes:
+            return True
+
+    text = f"{trigger.get('condition', '')} {trigger.get('result', '')} {trigger.get('text', '')}"
+    for node_name in nearby_nodes:
+        if node_name and node_name in text:
+            return True
+    for building, nodes in BUILDING_NODE_MAP.items():
+        if building not in text:
+            continue
+        if any(node in nearby_nodes for node in nodes):
+            return True
+    return False

@@ -22,12 +22,13 @@ from dataclasses import dataclass
 
 from .character_profiles import CharacterProfile, build_default_character_profiles
 from .companion_profiles import CompanionProfile, build_default_companion_profiles
-from .constants import MOVE_TIME_COST, PHASE_EMERGENCY
+from .constants import BASE_HOLY_WATER_PER_TIME, MOVE_TIME_COST, PHASE_EMERGENCY
 from .global_config import GlobalConfig
 from .global_event_checker import GlobalEventChecker
 from .map_core import CampusMap
 from .roles import PlayerRole, Role
 from .story_settings import GlobalStorySetting, build_default_story_setting
+from .units import DeployedUnit
 
 
 @dataclass
@@ -63,6 +64,7 @@ class GameEngine:
         self.main_player_name: str | None = None
         self.game_over: bool = False
         self.game_result: str | None = None
+        self._next_companion_unit_seq: int = 1
 
     def register_player(self, player: PlayerRole) -> None:
         if player.name in self.players:
@@ -131,6 +133,7 @@ class GameEngine:
         self.global_config.advance_time(amount)
         self._progress_movements(amount)
         self._regenerate_players(amount)
+        self._regenerate_companion_holy_water(amount)
         self._tick_romance_affection(amount)
         self._run_companion_auto_checks()
         self.event_checker.check_time_triggers()
@@ -262,6 +265,78 @@ class GameEngine:
         self.get_companion_profile(companion_name)
         self.global_config.add_companion_affection(companion_name, delta)
 
+    def set_companion_holy_water(self, companion_name: str, value: float) -> None:
+        self.get_companion_profile(companion_name)
+        if value < 0:
+            raise ValueError("companion holy_water must be >= 0.")
+        state = self.global_config.get_companion_state(companion_name)
+        state["holy_water"] = float(value)
+
+    def add_companion_holy_water(self, companion_name: str, delta: float) -> None:
+        self.get_companion_profile(companion_name)
+        state = self.global_config.get_companion_state(companion_name)
+        next_value = float(state.get("holy_water", 0.0)) + float(delta)
+        if next_value < 0:
+            raise ValueError("companion holy_water cannot be negative.")
+        state["holy_water"] = next_value
+
+    def deploy_companion_card(
+        self,
+        actor_role_name: str,
+        companion_name: str,
+        card_name: str,
+        node_name: str | None = None,
+    ) -> DeployedUnit:
+        """
+        Deploy a companion card using companion's own holy water.
+        Spawn location defaults to main player's current node, meaning the unit is near the main player.
+        """
+
+        if self.main_player_name is None:
+            raise ValueError("main player is not set.")
+        if actor_role_name != self.main_player_name:
+            raise ValueError("only main player can command companion deploy.")
+
+        profile = self.get_companion_profile(companion_name)
+        state = self.global_config.get_companion_state(companion_name)
+        if not bool(state.get("in_team", False)):
+            raise ValueError(f"companion is not in team: {companion_name}")
+        if not bool(state.get("can_attack", False)):
+            raise ValueError(f"companion cannot deploy cards: {companion_name}")
+        if card_name not in profile.deck:
+            raise ValueError(f"card is not in companion deck: {card_name}")
+
+        main_player = self.get_player(self.main_player_name)
+        if card_name not in main_player.available_cards:
+            raise KeyError(f"unit card not found: {card_name}")
+        card = main_player.available_cards[card_name]
+
+        holy_water = float(state.get("holy_water", 0.0))
+        if holy_water < float(card.consume):
+            raise ValueError(
+                f"companion holy water is not enough: need {card.consume}, current {holy_water}"
+            )
+        state["holy_water"] = holy_water - float(card.consume)
+
+        spawn_node = node_name or self.get_role(self.main_player_name).current_location
+        spawn = self.campus_map.get_node(spawn_node)
+        if not spawn.valid:
+            raise ValueError(f"cannot deploy at destroyed node: {spawn_node}")
+
+        unit_id = f"{companion_name}-U{self._next_companion_unit_seq}"
+        self._next_companion_unit_seq += 1
+        deployed = DeployedUnit(
+            unit_id=unit_id,
+            owner_name=companion_name,
+            card=card,
+            current_health=card.health,
+            node_name=spawn_node,
+            is_wartime=self.global_config.is_battle_phase,
+            deployed_time=self.global_config.current_time_unit,
+        )
+        main_player.active_units[unit_id] = deployed
+        return deployed
+
     def set_team_companions(self, names: list[str]) -> None:
         for name in names:
             self.get_companion_profile(name)
@@ -310,6 +385,24 @@ class GameEngine:
     def _regenerate_players(self, amount: float) -> None:
         for player in self.players.values():
             player.regenerate_holy_water(amount)
+
+    def _companion_holy_water_rate_per_time(self) -> float:
+        multiplier = 1.0
+        if self.global_config.is_emergency_phase:
+            multiplier *= 2.0
+        if self.global_config.is_battle_phase:
+            multiplier *= 4.0
+        return BASE_HOLY_WATER_PER_TIME * multiplier
+
+    def _regenerate_companion_holy_water(self, amount: float) -> None:
+        if amount <= 0:
+            return
+        delta = self._companion_holy_water_rate_per_time() * amount
+        for name in self.global_config.list_team_companions():
+            state = self.global_config.get_companion_state(name)
+            if not bool(state.get("can_attack", False)):
+                continue
+            state["holy_water"] = float(state.get("holy_water", 0.0)) + delta
 
     def _tick_romance_affection(self, amount: float) -> None:
         for name in self.global_config.list_team_companions():

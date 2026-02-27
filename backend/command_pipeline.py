@@ -10,6 +10,7 @@ Core design:
 
 Supported syntax summary:
 - Comment/blank: lines starting with `#` or empty lines are ignored.
+- Optional wrapper: one command can be wrapped as `[<command>]`.
 - Assignment: `left=right`
 - Append/remove text: `left+=text`, `left-=text` for text lists.
 - Numeric delta: `left+=number`, `left-=number` for numeric fields.
@@ -45,8 +46,11 @@ Immediate state commands:
 - `event.rocket_launch=<building_or_node_name>`
 
 Companion commands:
+- `companion.<name>.deploy=<card_name>`
+- `companion.<name>.deploy=<card_name>@<node>`
 - `companion.<name>.discovered=<true|false>`
 - `companion.<name>.in_team=<true|false>`
+- `companion.<name>.holy_water=<number>`
 - `companion.<name>.affection=<number>`
 - `companion.<name>.noticed_by=<hostile1,hostile2,...>`
 - `companion.<name>.noticed_by+=<hostile>`
@@ -111,6 +115,7 @@ class CommandPipeline:
     def compile_line(self, line: str) -> None:
         """Compile and apply one line."""
 
+        line = self._normalize_bracket_command(line)
         try:
             if "+=" in line:
                 left, right = line.split("+=", 1)
@@ -422,6 +427,14 @@ class CommandPipeline:
         if len(parts) != 3:
             raise ValueError(f"invalid companion command target: {left}")
         _, name, field = parts
+        if field == "deploy":
+            actor = self.engine.main_player_name
+            if actor is None:
+                raise ValueError("global main_player must be set before companion deploy.")
+            card_name, node_name = self._parse_deploy_payload(right)
+            self.engine.deploy_companion_card(actor, name, card_name, node_name=node_name)
+            self.runtime_messages.append(f"companion deploy executed: {name} card={card_name}")
+            return
         if field == "discovered":
             self.engine.set_companion_discovered(name, self._parse_bool(right))
             self.runtime_messages.append(f"companion discovered set: {name}")
@@ -429,6 +442,10 @@ class CommandPipeline:
         if field == "in_team":
             self.engine.set_companion_in_team(name, self._parse_bool(right))
             self.runtime_messages.append(f"companion in_team set: {name}")
+            return
+        if field == "holy_water":
+            self.engine.set_companion_holy_water(name, self._parse_float(right))
+            self.runtime_messages.append(f"companion holy_water set: {name}")
             return
         if field == "affection":
             self.engine.set_companion_affection(name, self._parse_float(right))
@@ -464,6 +481,11 @@ class CommandPipeline:
             name = left[len("companion.") : -len(".affection")]
             self.engine.add_companion_affection(name, delta)
             self.runtime_messages.append(f"companion affection changed: {name} ({delta:+g})")
+            return
+        if left.startswith("companion.") and left.endswith(".holy_water"):
+            name = left[len("companion.") : -len(".holy_water")]
+            self.engine.add_companion_holy_water(name, delta)
+            self.runtime_messages.append(f"companion holy_water changed: {name} ({delta:+g})")
             return
 
         left_parts = left.split(".")
@@ -566,3 +588,15 @@ class CommandPipeline:
             unit_name, status = raw.split(":", 1)
             items[unit_name.strip()] = status.strip()
         return items
+
+    @staticmethod
+    def _normalize_bracket_command(line: str) -> str:
+        normalized = line.strip()
+        lowered = normalized.lower()
+        if lowered in ("[command]", "[/command]"):
+            return normalized
+        if normalized.startswith("[") and normalized.endswith("]"):
+            inner = normalized[1:-1].strip()
+            if inner:
+                return inner
+        return normalized

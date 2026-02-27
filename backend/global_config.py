@@ -13,6 +13,7 @@ Class:
   - companion state APIs: team/discovered/affection/noticed_by management.
   - add_scripted_trigger/remove_scripted_trigger/list_scripted_triggers: runtime trigger storage.
   - trigger helper APIs: mark fired/handled, query future triggers by owner.
+  - list_triggers_until(end_time): query trigger rows in [current_time, end_time].
 """
 
 from __future__ import annotations
@@ -142,6 +143,7 @@ class GlobalConfig:
                 "discovered": False,
                 "in_team": False,
                 "affection": 0.0,
+                "holy_water": 0.0,
                 "noticed_by": [],
             }
         self.team_companions = []
@@ -278,6 +280,31 @@ class GlobalConfig:
             if float(item["trigger_time"]) > current_time:
                 return True
         return False
+
+    def list_triggers_until(
+        self,
+        end_time: float,
+        include_handled: bool = True,
+        owner: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Return triggers with `current_time <= trigger_time <= end_time`.
+        """
+
+        start = float(self.current_time_unit)
+        end = float(end_time)
+        rows: list[dict[str, Any]] = []
+        for item in self.scripted_triggers:
+            if owner is not None and str(item["owner"]) != owner:
+                continue
+            if (not include_handled) and bool(item["handled"]):
+                continue
+            t = float(item["trigger_time"])
+            if t < start or t > end:
+                continue
+            rows.append(dict(item))
+        rows.sort(key=lambda x: (float(x["trigger_time"]), int(x["id"])))
+        return rows
 
     @staticmethod
     def _extract_trigger_owner(text: str) -> tuple[str, str]:
