@@ -24,8 +24,10 @@ Immediate state commands:
 - `time.advance=<number>` (must be multiple of 0.5)
 - `global.battle=<target_role_name|none|true|false>`
 - `global.emergency=<true|false>`
+- `global.main_player=<player_name>`
 - `map.<node>.valid=<true|false>`
 - `<role>.location=<node>`
+- `<role>.escape=<node>`
 - `<role>.health=<number>`
 - `<role>.holy_water=<number>`
 - `<role>.battle=<target_role_name|none>`
@@ -185,6 +187,10 @@ class CommandPipeline:
             self.engine.set_emergency_phase(self._parse_bool(right))
             self.runtime_messages.append(f"global emergency set: {right}")
             return
+        if left == "global.main_player":
+            self.engine.set_main_player(right)
+            self.runtime_messages.append(f"global main_player set: {right}")
+            return
 
         if left.startswith("map.") and left.endswith(".valid"):
             node_name = left[len("map.") : -len(".valid")]
@@ -233,6 +239,10 @@ class CommandPipeline:
         if field == "location":
             self.engine.set_role_location(role_name, right)
             self.runtime_messages.append(f"location set: {role_name} -> {right}")
+            return
+        if field == "escape":
+            self.engine.attempt_escape(role_name, right)
+            self.runtime_messages.append(f"escape success: {role_name} via {right}")
             return
         if field == "health":
             self.engine.set_role_health(role_name, self._parse_float(right))

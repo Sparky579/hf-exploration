@@ -1,26 +1,24 @@
 """
 Module purpose:
-- Provide a single game-time driver so movement, regen, and queue tasks are resolved consistently.
+- Provide a single game-time driver for movement, regen, triggers, and game-over checks.
 
 Data classes:
 - MovementTask: one queued movement command with remaining travel time.
 
 Class:
 - GameEngine
-  - register_player(player): register a player for automatic holy-water regeneration.
-  - get_role/get_player: fetch role/player object by name.
-  - issue_move(role_name, target_node_name): enqueue one-edge movement for role.
-  - advance_time(amount): advance world time and resolve queued systems.
-  - set_emergency_phase(enabled): toggle emergency phase.
-  - set_battle_phase(enabled): compatibility wrapper for boolean battle on/off.
-  - set_battle_state(target): set global battle state string (who is being fought).
-  - add_global_dynamic_state/add_role_dynamic_state: append dynamic text states.
-  - set_node_valid(node_name, valid): mark map node valid/destroyed.
+  - register_player(player): register player for holy-water regen.
+  - set_main_player(player_name): set main controlled player.
+  - get_role/get_player/get_character_profile: fetch runtime/static entities.
+  - issue_move(role_name, target_node_name): enqueue one-edge move.
+  - advance_time(amount): advance world and run movement/regen/trigger checks.
+  - set_emergency_phase/set_battle_phase/set_battle_state: global phase state changes.
+  - add_global_dynamic_state/add_role_dynamic_state: dynamic text writes.
+  - set_node_valid: mark map node valid/destroyed.
+  - attempt_escape: process escape event by story checker.
   - set_role_location/set_role_health/set_role_battle_target: role state writes.
   - set_player_holy_water: player holy-water write.
-  - set_character_status/add_character_history/remove_character_history/set_character_deck/set_character_description:
-    static character profile maintenance.
-  - _progress_movements/_regenerate_players: internal tick helpers.
+  - character profile maintenance APIs.
 """
 
 from __future__ import annotations
@@ -30,8 +28,10 @@ from dataclasses import dataclass
 from .character_profiles import CharacterProfile, build_default_character_profiles
 from .constants import MOVE_TIME_COST, PHASE_EMERGENCY
 from .global_config import GlobalConfig
+from .global_event_checker import GlobalEventChecker
 from .map_core import CampusMap
 from .roles import PlayerRole, Role
+from .story_settings import GlobalStorySetting, build_default_story_setting
 
 
 @dataclass
@@ -43,19 +43,37 @@ class MovementTask:
 
 
 class GameEngine:
-    """Unified time source for world updates."""
+    """Unified time source for world updates and story trigger checks."""
 
-    def __init__(self, campus_map: CampusMap, global_config: GlobalConfig) -> None:
+    def __init__(
+        self,
+        campus_map: CampusMap,
+        global_config: GlobalConfig,
+        story_setting: GlobalStorySetting | None = None,
+    ) -> None:
         self.campus_map = campus_map
         self.global_config = global_config
         self.players: dict[str, PlayerRole] = {}
         self._movement_tasks: dict[str, MovementTask] = {}
         self.character_profiles: dict[str, CharacterProfile] = build_default_character_profiles()
 
+        self.story_setting = story_setting or build_default_story_setting()
+        self.event_checker = GlobalEventChecker(self, self.story_setting)
+
+        self.main_player_name: str | None = None
+        self.game_over: bool = False
+        self.game_result: str | None = None
+
     def register_player(self, player: PlayerRole) -> None:
         if player.name in self.players:
             raise ValueError(f"player already registered: {player.name}")
         self.players[player.name] = player
+        if self.main_player_name is None:
+            self.main_player_name = player.name
+
+    def set_main_player(self, player_name: str) -> None:
+        self.get_player(player_name)
+        self.main_player_name = player_name
 
     def get_role(self, role_name: str) -> Role:
         if role_name not in self.campus_map.roles:
@@ -107,6 +125,8 @@ class GameEngine:
         self.global_config.advance_time(amount)
         self._progress_movements(amount)
         self._regenerate_players(amount)
+        self.event_checker.check_time_triggers()
+        self._check_main_player_game_over()
         return self.global_config.current_time_unit
 
     def set_emergency_phase(self, enabled: bool) -> None:
@@ -132,6 +152,9 @@ class GameEngine:
     def set_node_valid(self, node_name: str, valid: bool) -> None:
         self.campus_map.set_node_valid(node_name, valid)
 
+    def attempt_escape(self, role_name: str, node_name: str) -> None:
+        self.event_checker.attempt_escape(role_name, node_name)
+
     def set_role_location(self, role_name: str, node_name: str) -> None:
         role = self.get_role(role_name)
         target_node = self.campus_map.get_node(node_name)
@@ -147,6 +170,7 @@ class GameEngine:
     def set_role_health(self, role_name: str, value: float) -> None:
         role = self.get_role(role_name)
         role.set_health(value)
+        self._check_main_player_game_over()
 
     def set_role_battle_target(self, role_name: str, target: str | None) -> None:
         role = self.get_role(role_name)
@@ -192,3 +216,11 @@ class GameEngine:
     def _regenerate_players(self, amount: float) -> None:
         for player in self.players.values():
             player.regenerate_holy_water(amount)
+
+    def _check_main_player_game_over(self) -> None:
+        if self.main_player_name is None:
+            return
+        main_role = self.get_role(self.main_player_name)
+        if main_role.health <= 0:
+            self.game_over = True
+            self.game_result = "main_player_dead"
