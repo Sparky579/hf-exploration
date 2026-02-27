@@ -21,7 +21,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from backend import CommandPipeline, GameEngine, GlobalConfig, PlayerRole, build_default_campus_map
-from backend.llm_agent_bridge import extract_command_blocks
+from backend.llm_agent_bridge import LLMAgentBridge, extract_command_blocks
 from backend.llm_prompting import (
     build_enemy_initial_trigger_prompt,
     build_enemy_trigger_prompt,
@@ -89,6 +89,37 @@ def main() -> None:
     blocks = extract_command_blocks(text)
     assert_true(len(blocks) == 1, "should extract one command block")
     assert_true("[time.advance=0.5]" in blocks[0], "command block text mismatch")
+
+    # Enemy trigger lifecycle stability check: no duplicate pile-up when time does not move.
+    class _MockClient:
+        def generate_text(self, prompt: str) -> str:
+            return "[command]\n[/command]"
+
+        def stream_generate_text(self, prompt: str):
+            yield "[command]\n[/command]"
+
+    bridge = LLMAgentBridge(_MockClient())  # type: ignore[arg-type]
+    for _ in bridge.run_step_stream(
+        pipeline=pipeline,
+        recent_user_turns=["User: x", "System: y"],
+        current_user_input="wait",
+        apply_commands=True,
+    ):
+        pass
+    after_first = [
+        t for t in engine.global_config.scripted_triggers if str(t["owner"]) in ("李再斌", "颜宏帆")
+    ]
+    for _ in bridge.run_step_stream(
+        pipeline=pipeline,
+        recent_user_turns=["User: x", "System: y"],
+        current_user_input="wait",
+        apply_commands=True,
+    ):
+        pass
+    after_second = [
+        t for t in engine.global_config.scripted_triggers if str(t["owner"]) in ("李再斌", "颜宏帆")
+    ]
+    assert_true(len(after_first) == len(after_second), "enemy triggers should not duplicate when time is unchanged")
 
     print("PASS: llm prompt smoke test")
 

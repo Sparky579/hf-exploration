@@ -14,6 +14,7 @@ Class:
   - add_scripted_trigger/remove_scripted_trigger/list_scripted_triggers: runtime trigger storage.
   - trigger helper APIs: mark fired/handled, query future triggers by owner.
   - list_triggers_until(end_time): query trigger rows in [current_time, end_time].
+  - get_latest_trigger_time_for_owner(owner): query latest trigger time for one owner.
 """
 
 from __future__ import annotations
@@ -213,6 +214,11 @@ class GlobalConfig:
         normalized = sentence.strip()
         owner, body = self._extract_trigger_owner(normalized)
         trigger_time, condition, result = self._parse_scripted_trigger_sentence(body)
+
+        existing = self._find_same_trigger(owner, trigger_time, condition, result)
+        if existing is not None:
+            return dict(existing)
+
         item = {
             "id": self._next_trigger_id,
             "text": normalized,
@@ -275,11 +281,22 @@ class GlobalConfig:
         for item in self.scripted_triggers:
             if str(item["owner"]) != owner:
                 continue
+            if bool(item["handled"]):
+                continue
             if bool(item["triggered"]):
                 continue
             if float(item["trigger_time"]) > current_time:
                 return True
         return False
+
+    def get_latest_trigger_time_for_owner(self, owner: str) -> float | None:
+        latest: float | None = None
+        for item in self.scripted_triggers:
+            if str(item["owner"]) != owner:
+                continue
+            value = float(item["trigger_time"])
+            latest = value if latest is None else max(latest, value)
+        return latest
 
     def list_triggers_until(
         self,
@@ -336,6 +353,27 @@ class GlobalConfig:
         number = re.search(r"([0-9]+(?:\.[0-9]+)?)", text)
         trigger_time = float(number.group(1)) if number else 0.0
         return trigger_time, "default_condition", text
+
+    def _find_same_trigger(
+        self,
+        owner: str,
+        trigger_time: float,
+        condition: str,
+        result: str,
+    ) -> dict[str, Any] | None:
+        for item in self.scripted_triggers:
+            if str(item["owner"]) != owner:
+                continue
+            if abs(float(item["trigger_time"]) - float(trigger_time)) > 1e-9:
+                continue
+            if str(item["condition"]) != condition:
+                continue
+            if str(item["result"]) != result:
+                continue
+            if bool(item["handled"]):
+                continue
+            return item
+        return None
 
     def _sync_team_companions(self) -> None:
         self.team_companions = [name for name, state in self.companions.items() if bool(state["in_team"])]

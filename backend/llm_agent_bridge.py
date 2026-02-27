@@ -182,6 +182,11 @@ class LLMAgentBridge:
         missing_roles = [
             role for role in enemy_roles if not pipeline.engine.global_config.has_any_trigger_for_owner(role)
         ]
+        if missing_roles:
+            self._seed_default_enemy_initial_triggers(pipeline, missing_roles, applied, errors)
+            missing_roles = [
+                role for role in enemy_roles if not pipeline.engine.global_config.has_any_trigger_for_owner(role)
+            ]
         if not missing_roles:
             self._enemy_bootstrapped = True
             return ""
@@ -198,15 +203,11 @@ class LLMAgentBridge:
             allow_time_advance=False,
         )
 
-        now = float(pipeline.engine.global_config.current_time_unit)
         # Fallback: ensure at least one trigger exists for each missing enemy.
         for role in missing_roles:
             if pipeline.engine.global_config.has_any_trigger_for_owner(role):
                 continue
-            fallback = (
-                f"trigger.add=owner:{role}|time {now + 1:g} "
-                f"if {role} alive and not left then {role} idle"
-            )
+            fallback = self._build_idle_trigger_line(pipeline, role)
             try:
                 pipeline.compile_line(fallback)
                 applied.append(fallback)
@@ -273,12 +274,40 @@ class LLMAgentBridge:
                 continue
             if pipeline.engine.global_config.has_future_trigger_for_owner(role, now=now):
                 continue
-            line = (
-                f"trigger.add=owner:{role}|time {now + 1:g} "
-                f"if {role} alive and not left then {role} idle"
-            )
+            line = self._build_idle_trigger_line(pipeline, role)
             pipeline.compile_line(line)
             applied.append(line)
+
+    def _seed_default_enemy_initial_triggers(
+        self,
+        pipeline: CommandPipeline,
+        roles: list[str],
+        applied: list[str],
+        errors: list[str],
+    ) -> None:
+        defaults = {
+            "李再斌": "trigger.add=owner:李再斌|time 7 if 李再斌 alive and not left then 李再斌 deploy 皮卡超人",
+            "颜宏帆": "trigger.add=owner:颜宏帆|time 9 if 颜宏帆 alive and not left then 颜宏帆 deploy 野猪骑士",
+        }
+        for role in roles:
+            line = defaults.get(role, self._build_idle_trigger_line(pipeline, role))
+            try:
+                pipeline.compile_line(line)
+                applied.append(line)
+            except Exception as exc:
+                errors.append(f"EnemyInit default failed: {role} -> {exc}")
+
+    def _build_idle_trigger_line(self, pipeline: CommandPipeline, role: str) -> str:
+        next_time = self._next_trigger_time_for_owner(pipeline, role)
+        return f"trigger.add=owner:{role}|time {next_time:g} if {role} alive and not left then {role} idle"
+
+    @staticmethod
+    def _next_trigger_time_for_owner(pipeline: CommandPipeline, role: str) -> float:
+        now = float(pipeline.engine.global_config.current_time_unit)
+        latest = pipeline.engine.global_config.get_latest_trigger_time_for_owner(role)
+        if latest is None:
+            return now + 1.0
+        return max(now + 1.0, float(latest) + 1.0)
 
     @staticmethod
     def _role_is_alive(pipeline: CommandPipeline, role_name: str) -> bool:
