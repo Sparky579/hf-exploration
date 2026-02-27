@@ -1,14 +1,14 @@
 # 命令管道语法说明
 
-`CommandPipeline` 会把控制台文本命令编译为：
+`CommandPipeline` 会把控制台命令编译为：
 1. 即时状态变更
-2. 队列动作（`move/deploy`）
+2. 队列动作（`move` / `deploy`）
 
 ## 1. 基本语法
 - 一行一条命令
 - 空行和 `#` 注释会忽略
-- 支持操作符：
-  - `=` 赋值执行
+- 操作符：
+  - `=` 赋值
   - `+=` 文本追加或数值增加
   - `-=` 文本删除或数值减少
 
@@ -21,7 +21,7 @@
 
 ## 3. 即时命令
 - 时间：
-  - `time.advance=<数值>`（必须是 0.5 倍数）
+  - `time.advance=<数值>`（必须是 0.5 的倍数）
   - `time.advance+=<数值>`
 
 - 全局：
@@ -77,17 +77,27 @@
   - `companion.<姓名>.noticed_by+=<敌对>`
   - `companion.<姓名>.noticed_by-=<敌对>`
 
-- 动态 Trigger：
+- Trigger / 事件：
   - `trigger.add=<句子>`
   - `trigger.remove=<id 或原句>`
   - `trigger.clear=true`
+  - `event.rocket_launch=<建筑或地点>`
 
 ## 4. Trigger 句子格式
-推荐格式：`时间8 若德政楼被摧毁 则进入紧急状态`  
-时间推进后若 `current_time > trigger_time`，系统会标记触发并写入触发历史日志。
+推荐格式：
+- `时间8 若德政楼被摧毁 则 进入紧急状态`
+- `角色:颜宏帆|时间3 若颜宏帆在东教学楼内部 则 颜宏帆下出小骷髅`
 
-## 5. 日志
-`CommandPipeline` 会维护最近命令日志，字段包括：
+规则：
+- 当 `current_time > trigger_time` 时，trigger 会被标记为触发。
+- 敌对角色 trigger 会由隐藏线程处理并继续生成下一条 trigger。
+
+## 5. 特殊事件
+- `event.rocket_launch=<建筑名>` 会立即写入“火箭升空提示”，并自动创建 1 时间单位后的坍塌 trigger。
+- 坍塌 trigger 的推荐结果写法：`建筑倒塌:<建筑名>`。
+
+## 6. 日志
+`CommandPipeline` 会维护最近命令日志：
 - `time`：执行时全局时间
 - `command`：原始命令
 - `status`：`ok` 或 `error`

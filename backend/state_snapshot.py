@@ -60,6 +60,7 @@ def build_step_context(
             "main_player": engine.main_player_name,
             "team_companions": engine.global_config.list_team_companions(),
             "scripted_triggers": engine.global_config.list_scripted_triggers(),
+            "fired_unhandled_triggers": engine.global_config.list_fired_unhandled_triggers(),
             "recent_trigger_history": engine.event_checker.recent_trigger_history(15),
             "game_over": engine.game_over,
             "game_result": engine.game_result,

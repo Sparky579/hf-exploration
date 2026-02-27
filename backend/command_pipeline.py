@@ -42,6 +42,7 @@ Immediate state commands:
 - `trigger.add=<trigger sentence>`
 - `trigger.remove=<id_or_text>`
 - `trigger.clear=true`
+- `event.rocket_launch=<building_or_node_name>`
 
 Companion commands:
 - `companion.<name>.discovered=<true|false>`
@@ -283,6 +284,18 @@ class CommandPipeline:
             if self._parse_bool(right):
                 self.engine.global_config.clear_scripted_triggers()
                 self.runtime_messages.append("trigger list cleared")
+            return
+        if left == "event.rocket_launch":
+            target = right.strip()
+            if not target:
+                raise ValueError("event.rocket_launch target must be non-empty.")
+            now = float(self.engine.global_config.current_time_unit)
+            self.engine.global_config.add_dynamic_state(
+                f"提示：你听到火箭升空声，{target}将在1时间单位后坍塌"
+            )
+            trigger_text = f"角色:系统|时间{now + 1:g} 若火箭命中{target} 则 建筑倒塌:{target}"
+            item = self.engine.global_config.add_scripted_trigger(trigger_text)
+            self.runtime_messages.append(f"rocket warning created trigger: #{item['id']}")
             return
 
         if left.startswith("map.") and left.endswith(".valid"):

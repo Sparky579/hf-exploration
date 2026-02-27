@@ -15,13 +15,17 @@ python backend/scripts/gemini_stream_demo.py --model gemini-3-flash-preview --ap
 
 可选参数：
 - `--api-key`：命令行传 key（不推荐）。
-- `--input`：本轮用户输入文本。
+- `--input`：本轮用户输入。
 - `--model`：模型名，默认 `gemini-3-flash-preview`。
-- `--apply-commands`：解析并执行模型返回的 `[command]` 命令。
+- `--apply-commands`：解析并执行模型返回的命令。
 
-## 3. 输出结构
+## 3. 线程说明
+- 主线线程：流式输出剧情 + 主控命令。
+- 隐藏线程：只处理敌对角色 trigger（初始化与触发执行）。
+
+## 4. 输出结构
 脚本会输出：
-1. 流式剧情文本（实时打印）。
-2. 解析出的叙事命令。
-3. 解析出的旁角色懒更新命令。
-4. 命令应用结果与失败信息。
+1. 流式剧情文本。
+2. 叙事命令解析结果。
+3. 敌对 trigger 处理命令解析结果。
+4. 命令应用成功/失败列表。

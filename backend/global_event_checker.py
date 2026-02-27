@@ -2,18 +2,16 @@
 Module purpose:
 - Check story triggers whenever time advances and apply global state changes.
 
-Events:
+Built-in events:
 - alert: triggered when `current_time > alert_trigger_time`.
 - emergency: triggered after 德政楼 is destroyed and time check runs.
 - explosion: triggered when `current_time > emergency_start + emergency_blast_delay`.
-- scripted trigger: text trigger loaded from config when `current_time > trigger_time`.
 
-Rules:
-- Before alert: escape allowed at story-configured nodes.
-- After alert: normal escape is disabled.
-- During emergency window: escape re-enabled at configured nodes.
-- 国际部 escape requires 国际部 node still valid.
-- Main player HP <= 0 means immediate game over.
+Scripted events:
+- Trigger sentence fires when `current_time > trigger_time`.
+- Supported auto result keywords:
+  - `提示:<text>` / `预警:<text>` -> append global dynamic state.
+  - `建筑倒塌:<name>` -> destroy mapped node(s), kill all roles at affected nodes.
 """
 
 from __future__ import annotations
@@ -40,6 +38,20 @@ class TriggerState:
 
 class GlobalEventChecker:
     """Run story trigger checks and escape validations."""
+
+    BUILDING_NODE_MAP: dict[str, list[str]] = {
+        "东教学楼": ["东教学楼南", "东教学楼内部", "东教学楼北"],
+        "西教学楼": ["西教学楼南", "西教学楼北"],
+        "南教学楼": ["南教学楼"],
+        "德政楼": ["德政楼"],
+        "图书馆": ["图书馆"],
+        "国际部": ["国际部"],
+        "宿舍": ["宿舍"],
+        "食堂": ["食堂"],
+        "体育馆": ["体育馆"],
+        "生化楼": ["生化楼"],
+        "田径场": ["田径场"],
+    }
 
     def __init__(self, engine: GameEngine, story_setting: GlobalStorySetting) -> None:
         self.engine = engine
@@ -78,6 +90,7 @@ class GlobalEventChecker:
                 if role_name in self.state.escaped_roles:
                     continue
                 self.engine.set_role_health(role_name, 0)
+                self._mark_character_dead_if_exists(role_name)
 
         self._check_scripted_triggers(now)
 
@@ -137,5 +150,60 @@ class GlobalEventChecker:
                 continue
             item["triggered"] = True
             text = str(item["text"])
-            self.engine.global_config.add_dynamic_state(f"脚本触发：{text}")
+            self.engine.global_config.add_dynamic_state(f"脚本触发#{item['id']}: {text}")
             self.state.trigger_history.append(f"t={now}: 脚本触发#{item['id']} -> {text}")
+            self._apply_scripted_result(item, now)
+
+    def _apply_scripted_result(self, item: dict[str, object], now: float) -> None:
+        result = str(item.get("result", "")).strip()
+        if not result:
+            return
+
+        if result.startswith("提示:") or result.startswith("预警:"):
+            message = result.split(":", 1)[1].strip()
+            if message:
+                self.engine.global_config.add_dynamic_state(message)
+                self.state.trigger_history.append(f"t={now}: 提示 -> {message}")
+            return
+
+        marker = "建筑倒塌:"
+        if marker in result:
+            target = result.split(marker, 1)[1].strip()
+            if target:
+                self._apply_structure_collapse(target, now)
+            return
+
+    def _apply_structure_collapse(self, target: str, now: float) -> None:
+        affected_nodes = self._resolve_collapse_nodes(target)
+        affected_roles: set[str] = set()
+        for node_name in affected_nodes:
+            if node_name not in self.engine.campus_map.nodes:
+                continue
+            node = self.engine.campus_map.get_node(node_name)
+            affected_roles.update(node.roles)
+            self.engine.set_node_valid(node_name, False)
+
+        for role_name in sorted(affected_roles):
+            self.engine.set_role_health(role_name, 0)
+            self._mark_character_dead_if_exists(role_name)
+
+        if affected_nodes:
+            joined_nodes = ",".join(affected_nodes)
+            self.engine.global_config.add_dynamic_state(f"{target}坍塌，影响区域：{joined_nodes}")
+            self.state.trigger_history.append(f"t={now}: 建筑倒塌 -> {target} ({joined_nodes})")
+
+    def _resolve_collapse_nodes(self, target: str) -> list[str]:
+        if target in self.BUILDING_NODE_MAP:
+            return list(self.BUILDING_NODE_MAP[target])
+        if target in self.engine.campus_map.nodes:
+            return [target]
+
+        hits = [name for name in self.engine.campus_map.nodes if target in name]
+        return sorted(hits)
+
+    def _mark_character_dead_if_exists(self, role_name: str) -> None:
+        if role_name not in self.engine.character_profiles:
+            return
+        profile = self.engine.character_profiles[role_name]
+        if profile.status != "死亡":
+            profile.set_status("死亡")

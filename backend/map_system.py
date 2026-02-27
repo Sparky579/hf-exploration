@@ -14,7 +14,8 @@ Re-exported groups:
 - Companion Profiles: CompanionProfile, CompanionRoleType, build_default_companion_profiles.
 - Story: GlobalStorySetting, build_default_story_setting.
 - Event Checker: GlobalEventChecker, TriggerState.
-- LLM/Prompt: GeminiClient, LLMAgentBridge, build_narrative_prompt, build_lazy_npc_prompt.
+- LLM/Prompt: GeminiClient, LLMAgentBridge, build_narrative_prompt,
+  build_enemy_initial_trigger_prompt, build_enemy_trigger_prompt.
 - Snapshot/Narrative assets: build_step_context, build_world_base_setting, get_scene_paragraph.
 """
 
@@ -27,7 +28,11 @@ from .gemini_client import GeminiClient
 from .global_config import GlobalConfig
 from .global_event_checker import GlobalEventChecker, TriggerState
 from .llm_agent_bridge import LLMAgentBridge
-from .llm_prompting import build_lazy_npc_prompt, build_narrative_prompt
+from .llm_prompting import (
+    build_enemy_initial_trigger_prompt,
+    build_enemy_trigger_prompt,
+    build_narrative_prompt,
+)
 from .map_core import CampusMap, MapNode, build_default_campus_map
 from .narrative_assets import build_world_base_setting, get_scene_paragraph
 from .roles import PlayerRole, Role
@@ -69,7 +74,8 @@ __all__ = [
     "PlayerRole",
     "QueueMessage",
     "Role",
-    "build_lazy_npc_prompt",
+    "build_enemy_initial_trigger_prompt",
+    "build_enemy_trigger_prompt",
     "build_narrative_prompt",
     "build_step_context",
     "build_world_base_setting",

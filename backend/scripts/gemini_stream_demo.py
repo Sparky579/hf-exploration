@@ -3,12 +3,12 @@ Module purpose:
 - Demonstrate one LLM-driven game step with Gemini stream output.
 
 Script flow:
-1. Build a minimal runtime world (map + engine + main player + key角色位置).
-2. Build command pipeline and recent logs.
-3. Send two parallel LLM requests through LLMAgentBridge:
-   - main narrative request in stream mode,
-   - lazy NPC control request in normal mode.
-4. Print streamed narrative chunks in real time, then print parsed commands and apply results.
+1. Build a minimal runtime world.
+2. Build command pipeline and seed one enemy trigger.
+3. Send requests through LLMAgentBridge:
+   - main narrative in stream mode,
+   - hidden enemy trigger processing only when enemy trigger fires.
+4. Print streamed narrative and parsed command summary.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from backend.llm_agent_bridge import LLMAgentBridge
 
 
 def build_demo_runtime() -> tuple[GameEngine, CommandPipeline]:
-    """Build a minimal world with main player and several named roles."""
+    """Build a minimal world with one main player and enemy roles."""
 
     campus = build_default_campus_map()
     cfg = GlobalConfig()
@@ -44,6 +44,7 @@ def build_demo_runtime() -> tuple[GameEngine, CommandPipeline]:
 
     pipeline = CommandPipeline(engine)
     pipeline.compile_line("global.main_player=主控玩家")
+    pipeline.compile_line("trigger.add=角色:颜宏帆|时间0.5 若颜宏帆在教室 则 颜宏帆下出小骷髅")
     return engine, pipeline
 
 
@@ -89,8 +90,8 @@ def main() -> None:
     print("Narrative:")
     for line in final_packet["narrative_commands"]:
         print(f"- {line}")
-    print("NPC:")
-    for line in final_packet["npc_commands"]:
+    print("Enemy:")
+    for line in final_packet["enemy_commands"]:
         print(f"- {line}")
 
     print("\n==== Apply Result ====")

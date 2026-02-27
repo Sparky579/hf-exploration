@@ -1,6 +1,6 @@
 """
 Module purpose:
-- Manage global timeline, world states, battle target, companion runtime state, and scripted story triggers.
+- Manage global timeline, world states, battle target, companion runtime state, and scripted triggers.
 
 Class:
 - GlobalConfig
@@ -10,12 +10,9 @@ Class:
   - add_dynamic_state/remove_dynamic_state/list_dynamic_states: dynamic text state maintenance.
   - set_battle_state/clear_battle_state/is_battle_phase: battle target string state.
   - init_companion_registry(profiles): initialize companion fixed-format runtime storage.
-  - get_companion_state/list_team_companions/set_team_companions: companion team state APIs.
-  - set_companion_discovered/set_companion_in_team: companion boolean flags.
-  - set_companion_affection/add_companion_affection: affection maintenance.
-  - add_companion_noticer/remove_companion_noticer: noticed-by hostile list maintenance.
-  - get_effective_main_move_cost(base): compute main-player move cost using team companions.
-  - add_scripted_trigger/remove_scripted_trigger/list_scripted_triggers: runtime text trigger storage.
+  - companion state APIs: team/discovered/affection/noticed_by management.
+  - add_scripted_trigger/remove_scripted_trigger/list_scripted_triggers: runtime trigger storage.
+  - trigger helper APIs: mark fired/handled, query future triggers by owner.
 """
 
 from __future__ import annotations
@@ -48,7 +45,13 @@ class GlobalConfig:
         self.companions: dict[str, dict[str, Any]] = {}
         self.team_companions: list[str] = []
 
-        # Dynamic scripted triggers added by config/story/model.
+        # Dynamic scripted triggers added by story/model/system.
+        # Item shape:
+        # {
+        #   "id": int, "text": str, "owner": str,
+        #   "trigger_time": float, "condition": str, "result": str,
+        #   "triggered": bool, "handled": bool,
+        # }
         self.scripted_triggers: list[dict[str, Any]] = []
         self._next_trigger_id = 1
 
@@ -194,17 +197,29 @@ class GlobalConfig:
         return effective
 
     def add_scripted_trigger(self, sentence: str) -> dict[str, Any]:
+        """
+        Add one scripted trigger.
+
+        Accepted text formats:
+        - "时间8 若A 则B"
+        - "角色:颜宏帆|时间3 若A 则B"
+        - Fallback: any sentence with a number; first number is used as trigger time.
+        """
+
         if not isinstance(sentence, str) or not sentence.strip():
             raise ValueError("scripted trigger text must be a non-empty string.")
         normalized = sentence.strip()
-        trigger_time, condition, result = self._parse_scripted_trigger_sentence(normalized)
+        owner, body = self._extract_trigger_owner(normalized)
+        trigger_time, condition, result = self._parse_scripted_trigger_sentence(body)
         item = {
             "id": self._next_trigger_id,
             "text": normalized,
+            "owner": owner,
             "trigger_time": trigger_time,
             "condition": condition,
             "result": result,
             "triggered": False,
+            "handled": False,
         }
         self._next_trigger_id += 1
         self.scripted_triggers.append(item)
@@ -227,26 +242,73 @@ class GlobalConfig:
         return [dict(item) for item in self.scripted_triggers]
 
     def mark_trigger_fired(self, trigger_id: int) -> None:
+        trigger = self.get_scripted_trigger(trigger_id)
+        trigger["triggered"] = True
+
+    def mark_trigger_handled(self, trigger_id: int) -> None:
+        trigger = self.get_scripted_trigger(trigger_id)
+        trigger["handled"] = True
+
+    def get_scripted_trigger(self, trigger_id: int) -> dict[str, Any]:
         for item in self.scripted_triggers:
             if int(item["id"]) == int(trigger_id):
-                item["triggered"] = True
-                return
+                return item
         raise KeyError(f"scripted trigger not found: {trigger_id}")
+
+    def list_fired_unhandled_triggers(self, owner: str | None = None) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for item in self.scripted_triggers:
+            if not bool(item["triggered"]) or bool(item["handled"]):
+                continue
+            if owner is not None and str(item["owner"]) != owner:
+                continue
+            rows.append(dict(item))
+        return rows
+
+    def has_any_trigger_for_owner(self, owner: str) -> bool:
+        return any(str(item["owner"]) == owner for item in self.scripted_triggers)
+
+    def has_future_trigger_for_owner(self, owner: str, now: float | None = None) -> bool:
+        current_time = self.current_time_unit if now is None else float(now)
+        for item in self.scripted_triggers:
+            if str(item["owner"]) != owner:
+                continue
+            if bool(item["triggered"]):
+                continue
+            if float(item["trigger_time"]) > current_time:
+                return True
+        return False
+
+    @staticmethod
+    def _extract_trigger_owner(text: str) -> tuple[str, str]:
+        if "|" not in text:
+            return "global", text
+        head, body = text.split("|", 1)
+        head = head.strip()
+        body = body.strip()
+        if head.startswith("角色:"):
+            owner = head[len("角色:") :].strip() or "global"
+            return owner, body
+        if head.lower().startswith("owner:"):
+            owner = head.split(":", 1)[1].strip() or "global"
+            return owner, body
+        return "global", text
 
     @staticmethod
     def _parse_scripted_trigger_sentence(text: str) -> tuple[float, str, str]:
-        # Preferred format: "时间8 若xx 则yy" or "8时刻 若xx 则yy"
+        # Preferred format: "时间8 若xx 则yy" (also supports English keywords).
         match = re.match(
-            r"^\s*(?:时间|时刻)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:单位)?\s*若\s*(.+?)\s*则\s*(.+?)\s*$",
+            r"^\s*(?:时间|time|t)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:单位)?\s*(?:若|if)\s*(.+?)\s*(?:则|then)\s*(.+?)\s*$",
             text,
+            flags=re.IGNORECASE,
         )
         if match:
             return float(match.group(1)), match.group(2).strip(), match.group(3).strip()
 
-        # Fallback: extract first number as trigger time; keep original sentence as result.
+        # Fallback: extract first number as trigger time; keep sentence as result.
         number = re.search(r"([0-9]+(?:\.[0-9]+)?)", text)
         trigger_time = float(number.group(1)) if number else 0.0
-        return trigger_time, "默认条件", text
+        return trigger_time, "default_condition", text
 
     def _sync_team_companions(self) -> None:
         self.team_companions = [name for name, state in self.companions.items() if bool(state["in_team"])]
