@@ -1,20 +1,18 @@
 # 命令管道语法说明
 
-`CommandPipeline` 将控制台文本命令编译为：
-- 即时状态变更
-- 队列动作（`move/deploy`）
+`CommandPipeline` 会把控制台文本命令编译为：
+1. 即时状态变更
+2. 队列动作（`move/deploy`）
 
 ## 1. 基本语法
-
 - 一行一条命令
-- 空行与 `#` 注释忽略
-- 操作符：
-  - `=` 赋值/执行
+- 空行和 `#` 注释会忽略
+- 支持操作符：
+  - `=` 赋值执行
   - `+=` 文本追加或数值增加
   - `-=` 文本删除或数值减少
 
 ## 2. 队列动作
-
 - `<角色>.move=<节点>`
 - `<角色>.deploy=<卡名>`
 - `<角色>.deploy=<卡名>@<节点>`
@@ -22,16 +20,15 @@
 - `queue.clear=true`
 
 ## 3. 即时命令
-
 - 时间：
-  - `time.advance=<数值>`（必须 0.5 倍数）
+  - `time.advance=<数值>`（必须是 0.5 倍数）
   - `time.advance+=<数值>`
 
 - 全局：
   - `global.main_player=<玩家>`
   - `global.battle=<目标|none|true|false>`
   - `global.emergency=<true|false>`
-  - `global.team=<同伴1,同伴2,...>`（固定格式，写入 global config）
+  - `global.team=<同伴1,同伴2,...>`
   - `global.team+=<同伴>`
   - `global.team-=<同伴>`
   - `global.state+=<文本>`
@@ -80,27 +77,18 @@
   - `companion.<姓名>.noticed_by+=<敌对>`
   - `companion.<姓名>.noticed_by-=<敌对>`
 
-## 4. 同伴规则
+- 动态 Trigger：
+  - `trigger.add=<句子>`
+  - `trigger.remove=<id 或原句>`
+  - `trigger.clear=true`
 
-- 罗宾加入后主控移动耗时变为 1.5
-- 许琪琪加入后主控移动耗时变为 2
-- 冬雨加入后主控移动耗时变为 1.5
-- 多名陪同角色同时存在时，移动耗时按最慢值计算
-- 可攻略角色（romance）自然共处每 1 时间单位好感 +1（可命令行覆盖）
-- 若已有可攻略角色在队伍中，再邀请另一名可攻略角色，原角色离队
-- 马超鹏加入后主控切换为其手机卡组
+## 4. Trigger 句子格式
+推荐格式：`时间8 若德政楼被摧毁 则进入紧急状态`  
+时间推进后若 `current_time > trigger_time`，系统会标记触发并写入触发历史日志。
 
-## 5. 发现规则（引擎内置）
-
-- 罗宾：田径场
-- 许琪琪：东教学楼内部/东教学楼北路径，且时间不在 [6, 9]
-- 冬雨：图书馆
-- 马超鹏：时间 < 4 且位于东教学楼内部
-
-## 6. 测试脚本
-
-- `python backend/scripts/smoke_test.py`
-- `python backend/scripts/pipeline_test.py`
-- `python backend/scripts/global_trigger_check.py`
-- `python backend/scripts/story_full_game_test.py`
-- `python backend/scripts/companion_flow_test.py`
+## 5. 日志
+`CommandPipeline` 会维护最近命令日志，字段包括：
+- `time`：执行时全局时间
+- `command`：原始命令
+- `status`：`ok` 或 `error`
+- `detail`：执行说明或错误信息

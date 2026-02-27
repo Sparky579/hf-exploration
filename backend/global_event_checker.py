@@ -3,9 +3,10 @@ Module purpose:
 - Check story triggers whenever time advances and apply global state changes.
 
 Events:
-- alert: triggered when current_time > alert_trigger_time.
+- alert: triggered when `current_time > alert_trigger_time`.
 - emergency: triggered after 德政楼 is destroyed and time check runs.
-- explosion: triggered when current_time > emergency_start + emergency_blast_delay.
+- explosion: triggered when `current_time > emergency_start + emergency_blast_delay`.
+- scripted trigger: text trigger loaded from config when `current_time > trigger_time`.
 
 Rules:
 - Before alert: escape allowed at story-configured nodes.
@@ -78,6 +79,8 @@ class GlobalEventChecker:
                     continue
                 self.engine.set_role_health(role_name, 0)
 
+        self._check_scripted_triggers(now)
+
     def is_triggered(self, event_name: str) -> bool:
         mapping = {
             "alert": self.state.alert_triggered,
@@ -119,3 +122,20 @@ class GlobalEventChecker:
         self.state.trigger_history.append(
             f"t={self.engine.global_config.current_time_unit}: {role_name} 通过{node_name}逃离"
         )
+
+    def recent_trigger_history(self, limit: int = 15) -> list[str]:
+        if limit <= 0:
+            return []
+        return self.state.trigger_history[-limit:]
+
+    def _check_scripted_triggers(self, now: float) -> None:
+        for item in self.engine.global_config.scripted_triggers:
+            if bool(item["triggered"]):
+                continue
+            trigger_time = float(item["trigger_time"])
+            if now <= trigger_time:
+                continue
+            item["triggered"] = True
+            text = str(item["text"])
+            self.engine.global_config.add_dynamic_state(f"脚本触发：{text}")
+            self.state.trigger_history.append(f"t={now}: 脚本触发#{item['id']} -> {text}")

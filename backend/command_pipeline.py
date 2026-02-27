@@ -6,6 +6,7 @@ Core design:
 - `move` and `deploy` commands are queued in `message_queue`.
 - Most state updates are applied immediately when compiling.
 - `queue.flush=true` executes queued messages in order.
+- Every command is recorded into `command_logs` with execution time and result.
 
 Supported syntax summary:
 - Comment/blank: lines starting with `#` or empty lines are ignored.
@@ -38,6 +39,9 @@ Immediate state commands:
 - `<role>.nearby_units=<unitA:full,unitB:damaged>`
 - `<role>.nearby_unit.<unit_name>=<full|damaged|dead>`
 - `<role>.unit.<unit_id>.health=<number>` (<=0 means dead, remove from active list)
+- `trigger.add=<trigger sentence>`
+- `trigger.remove=<id_or_text>`
+- `trigger.clear=true`
 
 Companion commands:
 - `companion.<name>.discovered=<true|false>`
@@ -56,6 +60,7 @@ Text list commands:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from .engine import GameEngine
 
@@ -70,6 +75,16 @@ class QueueMessage:
     source_line: str
 
 
+@dataclass
+class CommandLog:
+    """One command execution record."""
+
+    time_unit: float
+    command: str
+    status: str
+    detail: str
+
+
 class CommandPipeline:
     """Compile command text and drive queue/state operations."""
 
@@ -77,6 +92,7 @@ class CommandPipeline:
         self.engine = engine
         self.message_queue: list[QueueMessage] = []
         self.runtime_messages: list[str] = []
+        self.command_logs: list[CommandLog] = []
 
     def compile_script(self, script: str) -> list[str]:
         """Compile and apply one multi-line script."""
@@ -94,19 +110,26 @@ class CommandPipeline:
     def compile_line(self, line: str) -> None:
         """Compile and apply one line."""
 
-        if "+=" in line:
-            left, right = line.split("+=", 1)
-            self._apply_plus(left.strip(), right.strip())
-            return
-        if "-=" in line:
-            left, right = line.split("-=", 1)
-            self._apply_minus(left.strip(), right.strip())
-            return
-        if "=" in line:
-            left, right = line.split("=", 1)
-            self._apply_assign(left.strip(), right.strip(), line)
-            return
-        raise ValueError(f"invalid command syntax: {line}")
+        try:
+            if "+=" in line:
+                left, right = line.split("+=", 1)
+                self._apply_plus(left.strip(), right.strip())
+                self._append_log(line, "ok", "plus-assignment applied")
+                return
+            if "-=" in line:
+                left, right = line.split("-=", 1)
+                self._apply_minus(left.strip(), right.strip())
+                self._append_log(line, "ok", "minus-assignment applied")
+                return
+            if "=" in line:
+                left, right = line.split("=", 1)
+                self._apply_assign(left.strip(), right.strip(), line)
+                self._append_log(line, "ok", "assignment applied")
+                return
+            raise ValueError(f"invalid command syntax: {line}")
+        except Exception as exc:
+            self._append_log(line, "error", str(exc))
+            raise
 
     def flush_queue(self) -> list[str]:
         """Execute all queued move/deploy messages in order."""
@@ -119,6 +142,7 @@ class CommandPipeline:
                 self.runtime_messages.append(
                     f"queued move accepted: {msg.role_name} -> {msg.payload['target_node']}"
                 )
+                self._append_log(msg.source_line, "ok", "queued move accepted")
             elif msg.action == "deploy":
                 player = self.engine.get_player(msg.role_name)
                 card_name = msg.payload.get("card_name")
@@ -127,11 +151,36 @@ class CommandPipeline:
                 self.runtime_messages.append(
                     f"queued deploy executed: {msg.role_name} card={card_name or 'TOP'}"
                 )
+                self._append_log(msg.source_line, "ok", "queued deploy executed")
             else:
                 raise ValueError(f"unknown queue action: {msg.action}")
             executed += 1
         self.runtime_messages.append(f"queue flushed: {executed} message(s)")
         return list(self.runtime_messages)
+
+    def get_recent_logs(self, limit: int = 15) -> list[dict[str, Any]]:
+        if limit <= 0:
+            return []
+        rows = self.command_logs[-limit:]
+        return [
+            {
+                "time": row.time_unit,
+                "command": row.command,
+                "status": row.status,
+                "detail": row.detail,
+            }
+            for row in rows
+        ]
+
+    def _append_log(self, command: str, status: str, detail: str) -> None:
+        self.command_logs.append(
+            CommandLog(
+                time_unit=float(self.engine.global_config.current_time_unit),
+                command=command,
+                status=status,
+                detail=detail,
+            )
+        )
 
     def _apply_plus(self, left: str, right: str) -> None:
         if left == "global.state":
@@ -219,6 +268,21 @@ class CommandPipeline:
             members = [name.strip() for name in right.split(",") if name.strip()]
             self.engine.set_team_companions(members)
             self.runtime_messages.append("global team replaced")
+            return
+        if left == "trigger.add":
+            item = self.engine.global_config.add_scripted_trigger(right)
+            self.runtime_messages.append(f"trigger added: #{item['id']}")
+            return
+        if left == "trigger.remove":
+            removed = self.engine.global_config.remove_scripted_trigger(right)
+            if not removed:
+                raise ValueError(f"trigger not found: {right}")
+            self.runtime_messages.append(f"trigger removed: {right}")
+            return
+        if left == "trigger.clear":
+            if self._parse_bool(right):
+                self.engine.global_config.clear_scripted_triggers()
+                self.runtime_messages.append("trigger list cleared")
             return
 
         if left.startswith("map.") and left.endswith(".valid"):

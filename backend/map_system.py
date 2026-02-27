@@ -14,6 +14,8 @@ Re-exported groups:
 - Companion Profiles: CompanionProfile, CompanionRoleType, build_default_companion_profiles.
 - Story: GlobalStorySetting, build_default_story_setting.
 - Event Checker: GlobalEventChecker, TriggerState.
+- LLM/Prompt: GeminiClient, LLMAgentBridge, build_narrative_prompt, build_lazy_npc_prompt.
+- Snapshot/Narrative assets: build_step_context, build_world_base_setting, get_scene_paragraph.
 """
 
 from .character_profiles import CharacterProfile, CharacterStatus, build_default_character_profiles
@@ -21,10 +23,15 @@ from .companion_profiles import CompanionProfile, CompanionRoleType, build_defau
 from .command_pipeline import CommandPipeline, QueueMessage
 from .constants import BASE_HOLY_WATER_PER_TIME, MOVE_TIME_COST, PHASE_BATTLE, PHASE_EMERGENCY
 from .engine import GameEngine, MovementTask
+from .gemini_client import GeminiClient
 from .global_config import GlobalConfig
 from .global_event_checker import GlobalEventChecker, TriggerState
+from .llm_agent_bridge import LLMAgentBridge
+from .llm_prompting import build_lazy_npc_prompt, build_narrative_prompt
 from .map_core import CampusMap, MapNode, build_default_campus_map
+from .narrative_assets import build_world_base_setting, get_scene_paragraph
 from .roles import PlayerRole, Role
+from .state_snapshot import build_step_context
 from .story_settings import GlobalStorySetting, build_default_story_setting
 from .units import (
     AttackPreference,
@@ -51,6 +58,8 @@ __all__ = [
     "GlobalEventChecker",
     "GlobalConfig",
     "GlobalStorySetting",
+    "GeminiClient",
+    "LLMAgentBridge",
     "MapNode",
     "MOVE_TIME_COST",
     "MovementTask",
@@ -60,6 +69,10 @@ __all__ = [
     "PlayerRole",
     "QueueMessage",
     "Role",
+    "build_lazy_npc_prompt",
+    "build_narrative_prompt",
+    "build_step_context",
+    "build_world_base_setting",
     "TriggerState",
     "TargetKind",
     "UnitCard",
@@ -70,4 +83,5 @@ __all__ = [
     "build_default_character_profiles",
     "build_default_story_setting",
     "build_default_unit_cards",
+    "get_scene_paragraph",
 ]

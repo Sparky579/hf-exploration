@@ -10,7 +10,7 @@ Data model:
   - move_time_cost: movement cost applied to main player when this companion is in team.
   - can_attack: whether this companion has direct card combat ability.
   - deck: 8-card deck.
-  - description: static story/behavior description.
+  - description: static story/behavior description with reaction traits.
 
 Functions:
 - build_default_companion_profiles(): build four default companions.
@@ -48,8 +48,9 @@ def build_default_companion_profiles() -> dict[str, CompanionProfile]:
             deck=["皮卡超人", "雷击法术", "电击法术", "万箭齐发", "飓风法术", "哥布林团伙", "火枪手", "加农炮"],
             description=(
                 "常驻田径场跑步，友善角色，永远不会攻击主控玩家。"
-                "注意到玩家后会主动提出加入队伍，与玩家共同战斗。"
-                "加入队伍后对主角施加负重debuff，移动一条边耗时变为1.5。"
+                "注意到玩家后会主动提出加入队伍并协同战斗。"
+                "性格温和且反应偏慢，非首次接触场景通常发言较少。"
+                "入队后施加移动减速效果：主控单边移动时长提升为1.5。"
             ),
         ),
         "许琪琪": CompanionProfile(
@@ -61,10 +62,10 @@ def build_default_companion_profiles() -> dict[str, CompanionProfile]:
             deck=["无战斗卡组", "无战斗卡组", "无战斗卡组", "无战斗卡组", "无战斗卡组", "无战斗卡组", "无战斗卡组", "无战斗卡组"],
             description=(
                 "无战斗能力可攻略角色，常驻东教学楼北侧。"
-                "只能在东教学楼内部往北侧的路上被发现；时间6到9因上厕所无法被发现。"
-                "其余时刻可邀请加入，加入后随好感提升逐渐依赖主角。"
-                "加入队伍后移动一条边耗时变为2。"
-                "若被两名敌对角色注意到，会引发敌对角色吃醋愤怒。"
+                "仅能在东教学楼内部通往北侧路径上被发现；时间6到9因上厕所不可发现。"
+                "其余时刻可邀请加入，加入后存在感较强，随好感上升更依赖主控。"
+                "若被两名敌对角色注意，会触发对方吃醋愤怒。"
+                "入队后主控单边移动时长提升为2。"
             ),
         ),
         "冬雨": CompanionProfile(
@@ -75,10 +76,10 @@ def build_default_companion_profiles() -> dict[str, CompanionProfile]:
             can_attack=False,
             deck=["无卡组", "无卡组", "无卡组", "无卡组", "无卡组", "无卡组", "无卡组", "无卡组"],
             description=(
-                "可攻略角色，常驻图书馆，任意时间在图书馆可被发现。"
-                "提醒其校园事件会获得感激，可邀请加入队伍。"
-                "性格沉稳，无卡牌能力，但加入后可帮助主角攻击靠近的近战单位。"
-                "加入队伍后移动一条边耗时1.5。"
+                "可攻略角色，常驻图书馆，任意时间在图书馆可发现。"
+                "性格沉稳，加入后虽无出牌能力，但会帮助主控攻击靠近的近战单位。"
+                "与主控自然共处时好感持续上涨，且在剧情中存在感较强。"
+                "入队后主控单边移动时长为1.5。"
             ),
         ),
         "马超鹏": CompanionProfile(
@@ -89,8 +90,8 @@ def build_default_companion_profiles() -> dict[str, CompanionProfile]:
             can_attack=True,
             deck=["骷髅巨人", "女巫", "地狱飞龙", "火球", "亡灵大军", "骷髅墓碑", "掘地矿工", "骷髅军团"],
             description=(
-                "事件角色。开局时间单位4以前可通过东教学楼事件加入队伍。"
-                "加入后主角可使用其手机卡组进行战斗。"
+                "事件角色，机敏。开局时间单位4以前可通过东教学楼事件加入队伍。"
+                "加入后主角可直接使用其手机卡组作战。"
             ),
         ),
     }

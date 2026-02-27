@@ -56,6 +56,8 @@ class GameEngine:
         self.global_config.init_companion_registry(self.companion_profiles)
 
         self.story_setting = story_setting or build_default_story_setting()
+        for sentence in self.story_setting.opening_trigger_texts:
+            self.global_config.add_scripted_trigger(sentence)
         self.event_checker = GlobalEventChecker(self, self.story_setting)
 
         self.main_player_name: str | None = None
@@ -239,7 +241,7 @@ class GameEngine:
         if companion_name == "马超鹏":
             main_player = self.get_player(actor_role_name)
             main_player.set_card_deck(profile.deck)
-            self.global_config.add_dynamic_state("马超鹏加入，主角切换为手机战斗卡组")
+            self.global_config.add_dynamic_state("马超鹏加入，主角切换为其手机卡组")
 
     def remove_companion(self, companion_name: str) -> None:
         self.global_config.set_companion_in_team(companion_name, False)
@@ -334,7 +336,7 @@ class GameEngine:
             self.global_config.set_companion_discovered("冬雨", True)
             self.global_config.add_dynamic_state("你在图书馆发现了冬雨")
 
-        # 许琪琪：仅在东教学楼内部往北侧路径且时间不在[6,9]可发现
+        # 许琪琪：仅在东教学楼内部/北侧且时间不在[6,9]可发现
         xu_state = self.global_config.get_companion_state("许琪琪")
         if not bool(xu_state["discovered"]):
             if main_node in ("东教学楼内部", "东教学楼北") and not (6 <= now <= 9):
