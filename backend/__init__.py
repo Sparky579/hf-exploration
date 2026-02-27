@@ -13,6 +13,8 @@ from .map_system import (
     PHASE_EMERGENCY,
     AttackPreference,
     CampusMap,
+    CharacterProfile,
+    CharacterStatus,
     CommandPipeline,
     DeployedUnit,
     GameEngine,
@@ -27,6 +29,7 @@ from .map_system import (
     UnitCard,
     UnitClass,
     build_default_campus_map,
+    build_default_character_profiles,
     build_default_unit_cards,
 )
 
@@ -34,6 +37,8 @@ __all__ = [
     "AttackPreference",
     "BASE_HOLY_WATER_PER_TIME",
     "CampusMap",
+    "CharacterProfile",
+    "CharacterStatus",
     "CommandPipeline",
     "DeployedUnit",
     "GameEngine",
@@ -51,5 +56,6 @@ __all__ = [
     "UnitCard",
     "UnitClass",
     "build_default_campus_map",
+    "build_default_character_profiles",
     "build_default_unit_cards",
 ]

@@ -13,8 +13,11 @@ Class:
   - add_dynamic_state(text): append a dynamic runtime string (supports Chinese).
   - remove_dynamic_state(text): remove one dynamic runtime string.
   - list_dynamic_states(): return dynamic runtime strings.
+  - set_battle_state(target): set battle state string (who is being fought).
+  - clear_battle_state(): clear battle state.
+  - battle_state: current battle target string; None means not in battle.
   - is_emergency_phase: True when emergency state exists.
-  - is_battle_phase: True when battle state exists.
+  - is_battle_phase: True when battle_state is not empty.
 """
 
 from __future__ import annotations
@@ -30,11 +33,15 @@ class GlobalConfig:
         current_time_unit: float = 0.0,
         global_states: list[str] | None = None,
         dynamic_states: list[str] | None = None,
+        battle_state: str | None = None,
     ) -> None:
         self._current_time_unit = 0.0
         self.current_time_unit = current_time_unit
         self.global_states = list(global_states or [])
         self.dynamic_states = list(dynamic_states or [])
+        self.battle_state: str | None = None
+        if battle_state is not None:
+            self.set_battle_state(battle_state)
 
     @property
     def current_time_unit(self) -> float:
@@ -59,6 +66,9 @@ class GlobalConfig:
         return state in self.global_states
 
     def set_state(self, state: str, enabled: bool) -> None:
+        if state == PHASE_BATTLE:
+            self.set_battle_state("__BATTLE__" if enabled else None)
+            return
         if enabled and state not in self.global_states:
             self.global_states.append(state)
         if not enabled and state in self.global_states:
@@ -83,10 +93,23 @@ class GlobalConfig:
     def list_dynamic_states(self) -> list[str]:
         return list(self.dynamic_states)
 
+    def set_battle_state(self, target: str | None) -> None:
+        if target is None or not str(target).strip():
+            self.battle_state = None
+            if PHASE_BATTLE in self.global_states:
+                self.global_states.remove(PHASE_BATTLE)
+            return
+        self.battle_state = str(target).strip()
+        if PHASE_BATTLE not in self.global_states:
+            self.global_states.append(PHASE_BATTLE)
+
+    def clear_battle_state(self) -> None:
+        self.set_battle_state(None)
+
     @property
     def is_emergency_phase(self) -> bool:
         return self.has_state(PHASE_EMERGENCY)
 
     @property
     def is_battle_phase(self) -> bool:
-        return self.has_state(PHASE_BATTLE)
+        return self.battle_state is not None

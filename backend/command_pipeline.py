@@ -10,8 +10,8 @@ Core design:
 Supported syntax summary:
 - Comment/blank: lines starting with `#` or empty lines are ignored.
 - Assignment: `left=right`
-- Append/remove text: `left+=text`, `left-=text` for `global.state` / `<role>.state`
-- Numeric delta: `left+=number`, `left-=number` for numeric fields
+- Append/remove text: `left+=text`, `left-=text` for text lists.
+- Numeric delta: `left+=number`, `left-=number` for numeric fields.
 
 Queue commands:
 - `<role>.move=<node>`
@@ -22,21 +22,27 @@ Queue commands:
 
 Immediate state commands:
 - `time.advance=<number>` (must be multiple of 0.5)
-- `global.battle=<true|false>`
+- `global.battle=<target_role_name|none|true|false>`
 - `global.emergency=<true|false>`
+- `map.<node>.valid=<true|false>`
 - `<role>.location=<node>`
 - `<role>.health=<number>`
 - `<role>.holy_water=<number>`
+- `<role>.battle=<target_role_name|none>`
 - `<role>.card_valid=<int>`
 - `<role>.nearby_units=<unitA:full,unitB:damaged>`
 - `<role>.nearby_unit.<unit_name>=<full|damaged|dead>`
 - `<role>.unit.<unit_id>.health=<number>` (<=0 means dead, remove from active list)
 
-Dynamic text commands:
-- `global.state+=<text>`
-- `global.state-=<text>`
-- `<role>.state+=<text>`
-- `<role>.state-=<text>`
+Text list commands:
+- `global.state+=<text>` / `global.state-=<text>`
+- `<role>.state+=<text>` / `<role>.state-=<text>`
+- `character.<name>.history+=<text>` / `character.<name>.history-=<text>`
+
+Character profile commands:
+- `character.<name>.status=<存活|死亡|离开校园>`
+- `character.<name>.deck=<卡1,卡2,...,卡8>`
+- `character.<name>.description=<text>`
 """
 
 from __future__ import annotations
@@ -44,7 +50,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .engine import GameEngine
-from .roles import PlayerRole
 
 
 @dataclass
@@ -125,6 +130,11 @@ class CommandPipeline:
             self.engine.add_global_dynamic_state(right)
             self.runtime_messages.append("global dynamic state appended")
             return
+        if left.startswith("character.") and left.endswith(".history"):
+            name = left[len("character.") : -len(".history")]
+            self.engine.add_character_history(name, right)
+            self.runtime_messages.append(f"character history appended: {name}")
+            return
         if left.endswith(".state"):
             role_name = left[:-6]
             self.engine.add_role_dynamic_state(role_name, right)
@@ -136,6 +146,11 @@ class CommandPipeline:
         if left == "global.state":
             self.engine.global_config.remove_dynamic_state(right)
             self.runtime_messages.append("global dynamic state removed")
+            return
+        if left.startswith("character.") and left.endswith(".history"):
+            name = left[len("character.") : -len(".history")]
+            self.engine.remove_character_history(name, right)
+            self.runtime_messages.append(f"character history removed: {name}")
             return
         if left.endswith(".state"):
             role_name = left[:-6]
@@ -162,12 +177,23 @@ class CommandPipeline:
             self.runtime_messages.append(f"time advanced: +{value}")
             return
         if left == "global.battle":
-            self.engine.set_battle_phase(self._parse_bool(right))
-            self.runtime_messages.append(f"global battle set: {right}")
+            battle_target = self._parse_battle_value(right)
+            self.engine.set_battle_state(battle_target)
+            self.runtime_messages.append(f"global battle set: {battle_target}")
             return
         if left == "global.emergency":
             self.engine.set_emergency_phase(self._parse_bool(right))
             self.runtime_messages.append(f"global emergency set: {right}")
+            return
+
+        if left.startswith("map.") and left.endswith(".valid"):
+            node_name = left[len("map.") : -len(".valid")]
+            self.engine.set_node_valid(node_name, self._parse_bool(right))
+            self.runtime_messages.append(f"map node valid set: {node_name}={right}")
+            return
+
+        if left.startswith("character."):
+            self._apply_character_assign(left, right)
             return
 
         left_parts = left.split(".")
@@ -189,6 +215,7 @@ class CommandPipeline:
             self.runtime_messages.append(f"move queued: {role_name} -> {right}")
             return
         if field == "deploy":
+            self._assert_role_location_valid_for_internal_action(role_name, "deploy")
             card_name, node_name = self._parse_deploy_payload(right)
             payload = {"card_name": card_name}
             if node_name:
@@ -215,26 +242,53 @@ class CommandPipeline:
             self.engine.set_player_holy_water(role_name, self._parse_float(right))
             self.runtime_messages.append(f"holy_water set: {role_name}")
             return
+        if field == "battle":
+            self.engine.set_role_battle_target(role_name, self._parse_optional_string(right))
+            self.runtime_messages.append(f"role battle target set: {role_name}")
+            return
         if field == "card_valid":
             player = self.engine.get_player(role_name)
             player.set_card_valid(int(right))
             self.runtime_messages.append(f"card_valid set: {role_name} -> {right}")
             return
         if field == "nearby_units":
+            self._assert_role_location_valid_for_internal_action(role_name, "nearby_units")
             role.replace_nearby_units(self._parse_nearby_units(right))
             self.runtime_messages.append(f"nearby_units replaced: {role_name}")
             return
         if field == "nearby_unit" and len(left_parts) >= 3:
+            self._assert_role_location_valid_for_internal_action(role_name, "nearby_unit")
             unit_name = ".".join(left_parts[2:])
             role.set_nearby_unit_status(unit_name, right)
             self.runtime_messages.append(f"nearby_unit status set: {role_name}.{unit_name}={right}")
             return
         if field == "unit" and len(left_parts) == 4 and left_parts[3] == "health":
+            self._assert_role_location_valid_for_internal_action(role_name, "unit.health")
             unit_id = left_parts[2]
             self._set_runtime_unit_health(role_name, unit_id, self._parse_float(right))
             self.runtime_messages.append(f"runtime unit health set: {role_name}.{unit_id}")
             return
         raise ValueError(f"unsupported assignment command: {left}={right}")
+
+    def _apply_character_assign(self, left: str, right: str) -> None:
+        parts = left.split(".")
+        if len(parts) != 3:
+            raise ValueError(f"invalid character command target: {left}")
+        _, name, field = parts
+        if field == "status":
+            self.engine.set_character_status(name, right)
+            self.runtime_messages.append(f"character status set: {name} -> {right}")
+            return
+        if field == "deck":
+            deck = [x.strip() for x in right.split(",") if x.strip()]
+            self.engine.set_character_deck(name, deck)
+            self.runtime_messages.append(f"character deck set: {name}")
+            return
+        if field == "description":
+            self.engine.set_character_description(name, right)
+            self.runtime_messages.append(f"character description set: {name}")
+            return
+        raise ValueError(f"unsupported character command: {left}={right}")
 
     def _set_runtime_unit_health(self, role_name: str, unit_id: str, value: float) -> None:
         player = self.engine.get_player(role_name)
@@ -289,6 +343,13 @@ class CommandPipeline:
             return
         raise ValueError(f"unsupported numeric delta command: {left}")
 
+    def _assert_role_location_valid_for_internal_action(self, role_name: str, action_name: str) -> None:
+        role = self.engine.get_role(role_name)
+        if not self.engine.campus_map.is_node_valid(role.current_location):
+            raise ValueError(
+                f"cannot execute internal action '{action_name}' at destroyed node: {role.current_location}"
+            )
+
     @staticmethod
     def _parse_bool(text: str) -> bool:
         lowered = text.strip().lower()
@@ -310,6 +371,22 @@ class CommandPipeline:
         doubled = value * 2
         if abs(doubled - round(doubled)) > 1e-9:
             raise ValueError("time.advance must be a multiple of 0.5.")
+
+    @staticmethod
+    def _parse_optional_string(text: str) -> str | None:
+        lowered = text.strip().lower()
+        if lowered in ("none", "null", "", "false", "off", "0"):
+            return None
+        return text.strip()
+
+    @classmethod
+    def _parse_battle_value(cls, text: str) -> str | None:
+        lowered = text.strip().lower()
+        if lowered in ("none", "null", "", "false", "off", "0"):
+            return None
+        if lowered in ("true", "on", "1", "yes"):
+            return "__BATTLE__"
+        return text.strip()
 
     @staticmethod
     def _parse_deploy_payload(text: str) -> tuple[str, str | None]:

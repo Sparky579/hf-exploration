@@ -7,6 +7,8 @@ Classes:
   - query_current_location(): return role's current node.
   - query_movement_status(): return moving state plus from/to fields.
   - set_health(value): set role health (>=0).
+  - set_battle_target(target): set current battle target string for this role.
+  - clear_battle_target(): clear current battle target.
   - add_dynamic_state/remove_dynamic_state/list_dynamic_states(): manage role dynamic text states.
   - set_nearby_unit_status(name, status): set one nearby unit tag ("full"/"damaged"), "dead" removes it.
   - replace_nearby_units(items): replace nearby unit map by name->status.
@@ -48,6 +50,7 @@ class Role:
         self._current_location = start_location
         self._moving_to: str | None = None
         self.health = float(health)
+        self.battle_target: str | None = None
         self.dynamic_states: list[str] = []
         self.nearby_units: dict[str, NearbyUnitStatus] = {}
         self._campus_map.add_role(self, start_location)
@@ -75,6 +78,15 @@ class Role:
         if value < 0:
             raise ValueError("health must be >= 0.")
         self.health = float(value)
+
+    def set_battle_target(self, target: str | None) -> None:
+        if target is None or not str(target).strip():
+            self.battle_target = None
+            return
+        self.battle_target = str(target).strip()
+
+    def clear_battle_target(self) -> None:
+        self.battle_target = None
 
     def add_dynamic_state(self, text: str) -> None:
         if not isinstance(text, str) or not text.strip():
@@ -186,7 +198,9 @@ class PlayerRole(Role):
             raise ValueError(f"holy water is not enough: need {card.consume}, current {self.holy_water}")
 
         spawn_node = node_name or self.current_location
-        self._campus_map.get_node(spawn_node)
+        spawn = self._campus_map.get_node(spawn_node)
+        if not spawn.valid:
+            raise ValueError(f"cannot deploy at destroyed node: {spawn_node}")
         self.holy_water -= card.consume
 
         unit_id = f"{self.name}-U{self._next_unit_seq}"

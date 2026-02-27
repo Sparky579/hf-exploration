@@ -1,6 +1,6 @@
 """
 Module purpose:
-- Provide a single game-time driver so movement and resource regen are resolved in parallel.
+- Provide a single game-time driver so movement, regen, and queue tasks are resolved consistently.
 
 Data classes:
 - MovementTask: one queued movement command with remaining travel time.
@@ -8,24 +8,27 @@ Data classes:
 Class:
 - GameEngine
   - register_player(player): register a player for automatic holy-water regeneration.
+  - get_role/get_player: fetch role/player object by name.
   - issue_move(role_name, target_node_name): enqueue one-edge movement for role.
-  - advance_time(amount): the only API that advances time and resolves queued systems.
-  - set_emergency_phase(enabled): toggle emergency global state.
-  - set_battle_phase(enabled): toggle battle state and clear wartime units on battle end.
-  - add_global_dynamic_state(text): append one dynamic text to global config.
-  - add_role_dynamic_state(role_name, text): append one dynamic text to a role.
-  - set_role_location(role_name, node_name): force-update role map location.
-  - set_role_health(role_name, value): set role health.
-  - set_player_holy_water(player_name, value): set player holy-water amount.
-  - _progress_movements(amount): internal movement simulation update.
-  - _regenerate_players(amount): internal holy-water tick update.
+  - advance_time(amount): advance world time and resolve queued systems.
+  - set_emergency_phase(enabled): toggle emergency phase.
+  - set_battle_phase(enabled): compatibility wrapper for boolean battle on/off.
+  - set_battle_state(target): set global battle state string (who is being fought).
+  - add_global_dynamic_state/add_role_dynamic_state: append dynamic text states.
+  - set_node_valid(node_name, valid): mark map node valid/destroyed.
+  - set_role_location/set_role_health/set_role_battle_target: role state writes.
+  - set_player_holy_water: player holy-water write.
+  - set_character_status/add_character_history/remove_character_history/set_character_deck/set_character_description:
+    static character profile maintenance.
+  - _progress_movements/_regenerate_players: internal tick helpers.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .constants import MOVE_TIME_COST, PHASE_BATTLE, PHASE_EMERGENCY
+from .character_profiles import CharacterProfile, build_default_character_profiles
+from .constants import MOVE_TIME_COST, PHASE_EMERGENCY
 from .global_config import GlobalConfig
 from .map_core import CampusMap
 from .roles import PlayerRole, Role
@@ -40,13 +43,14 @@ class MovementTask:
 
 
 class GameEngine:
-    """Unified time source for parallel movement and resource regeneration."""
+    """Unified time source for world updates."""
 
     def __init__(self, campus_map: CampusMap, global_config: GlobalConfig) -> None:
         self.campus_map = campus_map
         self.global_config = global_config
         self.players: dict[str, PlayerRole] = {}
         self._movement_tasks: dict[str, MovementTask] = {}
+        self.character_profiles: dict[str, CharacterProfile] = build_default_character_profiles()
 
     def register_player(self, player: PlayerRole) -> None:
         if player.name in self.players:
@@ -63,10 +67,19 @@ class GameEngine:
             raise KeyError(f"player not registered: {player_name}")
         return self.players[player_name]
 
+    def get_character_profile(self, name: str) -> CharacterProfile:
+        if name not in self.character_profiles:
+            raise KeyError(f"character profile not found: {name}")
+        return self.character_profiles[name]
+
     def issue_move(self, role_name: str, target_node_name: str) -> MovementTask:
         role = self.get_role(role_name)
         if role_name in self._movement_tasks:
             raise ValueError(f"role is already moving: {role_name}")
+
+        target_node = self.campus_map.get_node(target_node_name)
+        if not target_node.valid:
+            raise ValueError(f"cannot move to destroyed node: {target_node_name}")
 
         current_node_name = role.current_location
         current_node = self.campus_map.get_node(current_node_name)
@@ -100,8 +113,11 @@ class GameEngine:
         self.global_config.set_state(PHASE_EMERGENCY, enabled)
 
     def set_battle_phase(self, enabled: bool) -> None:
+        self.set_battle_state("__BATTLE__" if enabled else None)
+
+    def set_battle_state(self, target: str | None) -> None:
         was_battle = self.global_config.is_battle_phase
-        self.global_config.set_state(PHASE_BATTLE, enabled)
+        self.global_config.set_battle_state(target)
         if was_battle and not self.global_config.is_battle_phase:
             for player in self.players.values():
                 player.clear_wartime_units()
@@ -113,9 +129,14 @@ class GameEngine:
         role = self.get_role(role_name)
         role.add_dynamic_state(text)
 
+    def set_node_valid(self, node_name: str, valid: bool) -> None:
+        self.campus_map.set_node_valid(node_name, valid)
+
     def set_role_location(self, role_name: str, node_name: str) -> None:
         role = self.get_role(role_name)
-        self.campus_map.get_node(node_name)
+        target_node = self.campus_map.get_node(node_name)
+        if not target_node.valid:
+            raise ValueError(f"cannot set location to destroyed node: {node_name}")
         old_node = role.current_location
         if role_name in self._movement_tasks:
             del self._movement_tasks[role_name]
@@ -127,11 +148,33 @@ class GameEngine:
         role = self.get_role(role_name)
         role.set_health(value)
 
+    def set_role_battle_target(self, role_name: str, target: str | None) -> None:
+        role = self.get_role(role_name)
+        role.set_battle_target(target)
+
     def set_player_holy_water(self, player_name: str, value: float) -> None:
         player = self.get_player(player_name)
         if value < 0:
             raise ValueError("holy_water must be >= 0.")
         player.holy_water = float(value)
+
+    def set_character_status(self, name: str, status: str) -> None:
+        self.get_character_profile(name).set_status(status)
+
+    def add_character_history(self, name: str, text: str) -> None:
+        self.get_character_profile(name).add_history(text)
+
+    def remove_character_history(self, name: str, text: str) -> None:
+        self.get_character_profile(name).remove_history(text)
+
+    def set_character_deck(self, name: str, deck: list[str]) -> None:
+        self.get_character_profile(name).set_card_deck(deck)
+
+    def set_character_description(self, name: str, text: str) -> None:
+        profile = self.get_character_profile(name)
+        if not text.strip():
+            raise ValueError("description must be non-empty.")
+        profile.description = text
 
     def _progress_movements(self, amount: float) -> None:
         completed: list[MovementTask] = []

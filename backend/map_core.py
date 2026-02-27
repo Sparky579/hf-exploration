@@ -6,6 +6,7 @@ Classes:
 - MapNode
   - add_state(sentence): append one description sentence to node state list.
   - set_states(sentences): replace current node state list.
+  - set_valid(value): set whether this node is still valid (not destroyed).
   - add_role(role_name): register role name at this node.
   - remove_role(role_name): remove role name from this node.
 - CampusMap
@@ -13,6 +14,8 @@ Classes:
   - get_node(name): fetch a node or raise if missing.
   - connect_nodes(a, b, bidirectional): create an edge.
   - set_node_states(node_name, states): replace a node's state sentences.
+  - set_node_valid(node_name, value): update node valid flag.
+  - is_node_valid(node_name): read node valid flag.
   - get_adjacent_nodes(node_name): return sorted neighbor names.
   - add_role(role, start_node_name): place a role at a start node.
   - transfer_role(role_name, from_node_name, to_node_name): move role between nodes.
@@ -36,12 +39,16 @@ class MapNode:
     states: list[str] = field(default_factory=list)
     roles: list[str] = field(default_factory=list)
     neighbors: set[str] = field(default_factory=set)
+    valid: bool = True
 
     def add_state(self, sentence: str) -> None:
         self.states.append(sentence)
 
     def set_states(self, sentences: list[str]) -> None:
         self.states = list(sentences)
+
+    def set_valid(self, value: bool) -> None:
+        self.valid = bool(value)
 
     def add_role(self, role_name: str) -> None:
         if role_name not in self.roles:
@@ -80,6 +87,12 @@ class CampusMap:
 
     def set_node_states(self, node_name: str, states: list[str]) -> None:
         self.get_node(node_name).set_states(states)
+
+    def set_node_valid(self, node_name: str, value: bool) -> None:
+        self.get_node(node_name).set_valid(value)
+
+    def is_node_valid(self, node_name: str) -> bool:
+        return self.get_node(node_name).valid
 
     def get_adjacent_nodes(self, node_name: str) -> list[str]:
         return sorted(self.get_node(node_name).neighbors)

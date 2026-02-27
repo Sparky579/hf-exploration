@@ -10,8 +10,10 @@ Re-exported groups:
 - Roles: Role, PlayerRole.
 - Engine: MovementTask, GameEngine.
 - Pipeline: QueueMessage, CommandPipeline.
+- Character Profiles: CharacterProfile, CharacterStatus, build_default_character_profiles.
 """
 
+from .character_profiles import CharacterProfile, CharacterStatus, build_default_character_profiles
 from .command_pipeline import CommandPipeline, QueueMessage
 from .constants import BASE_HOLY_WATER_PER_TIME, MOVE_TIME_COST, PHASE_BATTLE, PHASE_EMERGENCY
 from .engine import GameEngine, MovementTask
@@ -32,6 +34,8 @@ __all__ = [
     "AttackPreference",
     "BASE_HOLY_WATER_PER_TIME",
     "CampusMap",
+    "CharacterProfile",
+    "CharacterStatus",
     "CommandPipeline",
     "DeployedUnit",
     "GameEngine",
@@ -49,5 +53,6 @@ __all__ = [
     "UnitCard",
     "UnitClass",
     "build_default_campus_map",
+    "build_default_character_profiles",
     "build_default_unit_cards",
 ]

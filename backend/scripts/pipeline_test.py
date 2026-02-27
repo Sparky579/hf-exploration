@@ -4,7 +4,7 @@ Module purpose:
 
 Functions:
 - assert_true(cond, message): minimal assertion helper.
-- main(): build game world, compile pipeline script, verify queue/state behavior.
+- main(): build game world, compile pipeline script, verify queue/state/profile behavior.
 """
 
 from __future__ import annotations
@@ -44,6 +44,8 @@ def main() -> None:
     P1.health-=1
     P1.card_valid=4
     P1.card_valid+=1
+    P1.battle=李再斌
+    global.battle=李再斌
     global.state+=全局动态：演练开始
     P1.state+=角色动态：进入战备
     P1.nearby_units=地狱飞龙:full,巨人:damaged
@@ -54,29 +56,47 @@ def main() -> None:
     P1.deploy=地狱飞龙
     queue.flush=true
 
-    # progress world and change phase
+    # progress world
     time.advance=1
-    global.battle=true
     time.advance=0.5
 
     # runtime unit state
     P1.unit.P1-U1.health=50
     P1.unit.P1-U1.health=0
+
+    # map destroy and static character profiles
+    map.宿舍.valid=false
+    character.李再斌.history+=时间9摧毁宿舍
+    character.黎诺存.history+=时间25到达图书馆
+    character.颜宏帆.status=离开校园
     """
     pipeline.compile_script(script)
 
-    assert_true(p1.current_location == "东教学楼南", "move should be completed after 1 time unit")
+    assert_true(p1.current_location == "东教学楼南", "move should complete after one time unit")
     assert_true(p1.health == 7, "role health +=/-= should be updated")
     assert_true(p1.card_valid == 5, "card_valid += should be updated")
-    assert_true(abs(p1.holy_water - 18.0) < 1e-9, "holy_water +=/-= and regen should be consistent")
+    assert_true(abs(p1.holy_water - 19.5) < 1e-9, "holy_water +=/-=, consume, and battle regen should be consistent")
     assert_true("全局动态：演练开始" in cfg.list_dynamic_states(), "global dynamic text missing")
     assert_true("角色动态：进入战备" in p1.list_dynamic_states(), "role dynamic text missing")
     assert_true("巨人" not in p1.list_nearby_units(), "dead nearby unit should be removed")
     assert_true("地狱飞龙" in p1.card_deck[-1], "deck should rotate after deploy")
     assert_true("P1-U1" not in p1.active_units, "unit should be removed after health set to 0")
-    assert_true(cfg.is_battle_phase, "battle phase should be true")
+    assert_true(cfg.battle_state == "李再斌", "global battle state should be string target")
+    assert_true(p1.battle_target == "李再斌", "role battle target should be string target")
+    assert_true(not campus.is_node_valid("宿舍"), "destroyed node valid flag should be false")
+    assert_true("时间9摧毁宿舍" in engine.get_character_profile("李再斌").history, "character history missing")
+    assert_true(engine.get_character_profile("颜宏帆").status == "死亡", "leaving campus should map to dead")
     assert_true(abs(cfg.current_time_unit - 1.5) < 1e-9, "time should be 1.5")
     assert_true(len(pipeline.message_queue) == 0, "queue should be empty after flush")
+
+    # destroyed node should block internal actions
+    blocked = False
+    try:
+        pipeline.compile_line("P1.location=宿舍")
+    except ValueError:
+        blocked = True
+    assert_true(blocked, "setting location to destroyed node should fail")
+
     print("PASS: backend pipeline tests")
 
 

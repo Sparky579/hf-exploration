@@ -1,95 +1,108 @@
 # 命令管道语法说明
 
-本系统提供 `CommandPipeline`，用于把字符串脚本“编译”为游戏操作。
+`CommandPipeline` 用于把控制台字符串脚本编译为游戏状态变更与消息队列动作。
 
-## 1. 基本规则
+## 1. 基本语法
 
 - 一行一条指令。
-- 空行和 `#` 开头的行会被忽略。
-- 支持三种操作符：
+- 空行、`#` 开头行会忽略。
+- 三种操作符：
   - `=` 赋值/指令
-  - `+=` 文本追加或数值增量
-  - `-=` 文本删除或数值减量
+  - `+=` 追加文本或数值增量
+  - `-=` 删除文本或数值减量
 
-## 2. 队列与即时执行
+## 2. 队列动作（延迟执行）
 
-- **进入消息队列**（延迟执行）：
-  - `<角色名>.move=<节点名>`
-  - `<角色名>.deploy=<卡名>`
-  - `<角色名>.deploy=<卡名>@<节点名>`
-- **即时执行**（编译时立即生效）：
-  - `time.advance=<数值>`
-  - `global.battle=<true|false>`
-  - `global.emergency=<true|false>`
-  - `<角色名>.location=<节点名>`
-  - `<角色名>.health=<数值>`
-  - `<角色名>.holy_water=<数值>`
-  - `<角色名>.card_valid=<整数>`
-  - `<角色名>.nearby_units=<单位A:full,单位B:damaged>`
-  - `<角色名>.nearby_unit.<单位名>=<full|damaged|dead>`
-  - `<角色名>.unit.<unit_id>.health=<数值>`
-  - `global.state+=<文本>` / `global.state-=<文本>`
-  - `<角色名>.state+=<文本>` / `<角色名>.state-=<文本>`
-- **数值增减**（编译时立即生效）：
-  - `<角色名>.holy_water+=<数值>` / `<角色名>.holy_water-=<数值>`
-  - `<角色名>.health+=<数值>` / `<角色名>.health-=<数值>`
-  - `<角色名>.card_valid+=<整数>` / `<角色名>.card_valid-=<整数>`
-  - `<角色名>.unit.<unit_id>.health+=<数值>` / `<角色名>.unit.<unit_id>.health-=<数值>`
-  - `time.advance+=<数值>`（等价 `time.advance=<数值>`，且必须是 0.5 倍数）
-- 队列控制：
-  - `queue.flush=true` 执行所有排队消息
-  - `queue.clear=true` 清空队列
+- `<角色名>.move=<节点名>`
+- `<角色名>.deploy=<卡名>`
+- `<角色名>.deploy=<卡名>@<节点名>`
+- `queue.flush=true`：执行当前全部队列动作
+- `queue.clear=true`：清空队列
 
-## 3. 时间规则
+说明：
+- `move`/`deploy` 进入消息队列，不会立即生效。
+- 只有 `queue.flush=true` 后才真正下发到引擎。
 
-- `time.advance` 必须是 `0.5` 的倍数。
-- 角色移动一条边耗时由 `MOVE_TIME_COST` 控制（当前为 `1.0`）。
-- 只有调用 `time.advance`，排队的移动才会真正完成。
+## 3. 立即执行状态命令
 
-## 4. 出牌与卡组规则
+- `time.advance=<数值>`：推进时间，必须是 `0.5` 的倍数
+- `global.emergency=<true|false>`
+- `global.battle=<目标角色名|none|true|false>`
+  - `none/false` 代表不在战斗
+  - 其他字符串表示“正在和谁战斗”
+- `map.<节点名>.valid=<true|false>`
+  - `false` 表示地点已摧毁
+  - 被摧毁地点不能触发该地点内部行动（如下卡、维护身旁单位状态）
 
-- 每个玩家 `card_deck` 固定 8 张。
-- 前 `card_valid` 张可出牌（默认 4）。
-- 出牌会消耗卡牌 `consume` 圣水。
-- 每次出牌后，卡组执行轮转：
-  - 第 1 张移到第 8 位，后面依次前移。
+- `<角色名>.location=<节点名>`
+- `<角色名>.health=<数值>`
+- `<角色名>.holy_water=<数值>`
+- `<角色名>.battle=<目标角色名|none>`
+- `<角色名>.card_valid=<整数>`
+- `<角色名>.nearby_units=<单位A:full,单位B:damaged>`
+- `<角色名>.nearby_unit.<单位名>=<full|damaged|dead>`
+- `<角色名>.unit.<unit_id>.health=<数值>`
+  - `<=0` 视为死亡并从单位列表移除
 
-## 5. 身旁单位列表
+## 4. `+=` / `-=` 数值增减
 
-- 角色维护 `nearby_units`（单位名 -> 状态）。
-- 状态只有：
-  - `full`（满血）
-  - `damaged`（残血）
-  - `dead`（删除该单位，不再出现在列表中）
+- `<角色名>.holy_water+=<数值>` / `-=`
+- `<角色名>.health+=<数值>` / `-=`
+- `<角色名>.card_valid+=<整数>` / `-=`
+- `<角色名>.unit.<unit_id>.health+=<数值>` / `-=`
+- `time.advance+=<数值>`（等价 `time.advance=<数值>`，不支持 `time.advance-=`）
 
-## 6. 示例脚本
+## 5. 文本状态命令
+
+- `global.state+=<文本>` / `-=`
+- `<角色名>.state+=<文本>` / `-=`
+
+## 6. 角色档案（静态描述）命令
+
+- `character.<姓名>.status=<存活|死亡|离开校园>`
+  - `离开校园` 会自动归并为 `死亡`
+- `character.<姓名>.history+=<记录>`
+- `character.<姓名>.history-=<记录>`
+- `character.<姓名>.deck=<卡1,卡2,...,卡8>`
+- `character.<姓名>.description=<文本>`
+
+当前内置档案：
+- 李再斌（敌对）
+- 黎诺存（中立）
+- 颜宏帆（敌对）
+
+这些角色的“时间线行为”以 `description` 静态存储，不在引擎中自动执行；可通过上述命令在控制台手动驱动状态和历史。
+
+## 7. 示例脚本
 
 ```txt
-# 即时状态
+# 基础状态
 P1.location=正门
-P1.health=8
 P1.holy_water=20
 P1.holy_water+=1
-P1.holy_water-=0.5
-P1.health-=1
-P1.card_valid+=1
-global.state+=全局动态：演练开始
-P1.state+=角色动态：进入战备
-P1.nearby_units=地狱飞龙:full,巨人:damaged
-P1.nearby_unit.巨人=dead
+P1.health=10
+P1.health-=2
+P1.battle=李再斌
+global.battle=李再斌
+global.emergency=true
 
-# 入队
+# 地点摧毁与校验
+map.宿舍.valid=false
+
+# 队列动作
 P1.move=东教学楼南
 P1.deploy=地狱飞龙
 queue.flush=true
-
-# 时间推进与阶段控制
 time.advance=1
-global.battle=true
-time.advance=0.5
+
+# 静态角色档案维护
+character.李再斌.history+=时间9摧毁宿舍
+character.李再斌.status=存活
+character.黎诺存.history+=时间25到达图书馆
+character.颜宏帆.status=离开校园
 ```
 
-## 7. 测试脚本
+## 8. 测试脚本
 
-- 核心测试：`python backend/scripts/smoke_test.py`
-- 管道语法测试：`python backend/scripts/pipeline_test.py`
+- 核心功能：`python backend/scripts/smoke_test.py`
+- 管道与语法覆盖：`python backend/scripts/pipeline_test.py`
