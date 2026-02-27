@@ -6,19 +6,21 @@ Classes:
 - Role
   - query_current_location(): return role's current node.
   - query_movement_status(): return moving state plus from/to fields.
-  - add_dynamic_state(text): append one dynamic runtime string for this role.
-  - remove_dynamic_state(text): remove one dynamic runtime string for this role.
-  - list_dynamic_states(): return role dynamic runtime strings.
-  - _start_move(target): internal helper called by engine when move begins.
-  - _finish_move(target): internal helper called by engine when move ends.
+  - set_health(value): set role health (>=0).
+  - add_dynamic_state/remove_dynamic_state/list_dynamic_states(): manage role dynamic text states.
+  - set_nearby_unit_status(name, status): set one nearby unit tag ("full"/"damaged"), "dead" removes it.
+  - replace_nearby_units(items): replace nearby unit map by name->status.
+  - list_nearby_units(): return current nearby unit map copy.
+  - _start_move/_finish_move(): internal hooks called by engine.
 - PlayerRole (extends Role)
-  - holy_water_rate_per_time(): compute current regen rate from global phase.
+  - holy_water_rate_per_time(): compute regen rate from global phase.
   - regenerate_holy_water(dt): add holy water by dt and current multiplier.
-  - deploy_unit(unit_name, node_name): spawn player unit, mark wartime if battle phase.
-  - remove_unit(unit_id): remove one unit from active list.
-  - clear_wartime_units(): remove all wartime units when battle phase ends.
-  - list_active_units(): return runtime unit list.
-  - select_attack_target(...): enforce targeting priority and manual-target rules.
+  - deploy_unit(unit_name, node_name): deploy by explicit unit card name.
+  - deploy_from_deck(card_name=None, node_name=None): deploy using playable deck cards then rotate deck.
+  - rotate_card_deck(): shift first deck card to the end.
+  - playable_cards(): return current playable prefix cards.
+  - remove_unit/clear_wartime_units/list_active_units(): deployed-unit maintenance.
+  - select_attack_target(...): enforce target-priority and manual-target rules.
 """
 
 from __future__ import annotations
@@ -26,11 +28,11 @@ from __future__ import annotations
 from .constants import BASE_HOLY_WATER_PER_TIME
 from .global_config import GlobalConfig
 from .map_core import CampusMap
-from .units import DeployedUnit, TargetKind, UnitCard, build_default_unit_cards
+from .units import DeployedUnit, NearbyUnitStatus, TargetKind, UnitCard, build_default_unit_cards
 
 
 class Role:
-    """Role with location + queued movement status."""
+    """Role with location, health, nearby unit states, and queued movement status."""
 
     def __init__(
         self,
@@ -38,13 +40,16 @@ class Role:
         campus_map: CampusMap,
         global_config: GlobalConfig,
         start_location: str,
+        health: float = 10,
     ) -> None:
         self.name = name
         self._campus_map = campus_map
         self._global_config = global_config
         self._current_location = start_location
         self._moving_to: str | None = None
+        self.health = float(health)
         self.dynamic_states: list[str] = []
+        self.nearby_units: dict[str, NearbyUnitStatus] = {}
         self._campus_map.add_role(self, start_location)
 
     @property
@@ -66,6 +71,11 @@ class Role:
             "to": self._moving_to,
         }
 
+    def set_health(self, value: float) -> None:
+        if value < 0:
+            raise ValueError("health must be >= 0.")
+        self.health = float(value)
+
     def add_dynamic_state(self, text: str) -> None:
         if not isinstance(text, str) or not text.strip():
             raise ValueError("dynamic state text must be a non-empty string.")
@@ -79,6 +89,25 @@ class Role:
     def list_dynamic_states(self) -> list[str]:
         return list(self.dynamic_states)
 
+    def set_nearby_unit_status(self, unit_name: str, status: str) -> None:
+        if status == "dead":
+            self.nearby_units.pop(unit_name, None)
+            return
+        if status not in ("full", "damaged"):
+            raise ValueError("nearby unit status must be 'full', 'damaged', or 'dead'.")
+        self.nearby_units[unit_name] = status  # type: ignore[assignment]
+
+    def replace_nearby_units(self, items: dict[str, str]) -> None:
+        replaced: dict[str, NearbyUnitStatus] = {}
+        for unit_name, status in items.items():
+            if status not in ("full", "damaged"):
+                raise ValueError("replace_nearby_units accepts only 'full' or 'damaged'.")
+            replaced[unit_name] = status  # type: ignore[assignment]
+        self.nearby_units = replaced
+
+    def list_nearby_units(self) -> dict[str, NearbyUnitStatus]:
+        return dict(self.nearby_units)
+
     def _start_move(self, target_node_name: str) -> None:
         self._moving_to = target_node_name
 
@@ -88,7 +117,7 @@ class Role:
 
 
 class PlayerRole(Role):
-    """Player role with holy-water economy and unit management."""
+    """Player role with holy-water economy, card deck, and deployed unit management."""
 
     def __init__(
         self,
@@ -97,13 +126,42 @@ class PlayerRole(Role):
         global_config: GlobalConfig,
         start_location: str,
         available_cards: list[UnitCard] | None = None,
+        card_deck: list[str] | None = None,
+        card_valid: int = 4,
+        health: float = 10,
     ) -> None:
-        super().__init__(name, campus_map, global_config, start_location)
+        super().__init__(name, campus_map, global_config, start_location, health=health)
         self.holy_water: float = 0.0
         cards = available_cards if available_cards is not None else build_default_unit_cards()
         self.available_cards: dict[str, UnitCard] = {card.name: card for card in cards}
         self.active_units: dict[str, DeployedUnit] = {}
         self._next_unit_seq = 1
+
+        default_deck = list(self.available_cards.keys())
+        self.card_deck: list[str] = list(card_deck or default_deck)
+        self.card_valid = int(card_valid)
+        self._validate_deck()
+
+    def _validate_deck(self) -> None:
+        if len(self.card_deck) != 8:
+            raise ValueError("card_deck must contain exactly 8 cards.")
+        for card_name in self.card_deck:
+            if card_name not in self.available_cards:
+                raise ValueError(f"card_deck contains unknown card: {card_name}")
+        if not (1 <= self.card_valid <= 8):
+            raise ValueError("card_valid must be between 1 and 8.")
+
+    def set_card_valid(self, value: int) -> None:
+        if not (1 <= int(value) <= 8):
+            raise ValueError("card_valid must be between 1 and 8.")
+        self.card_valid = int(value)
+
+    def playable_cards(self) -> list[str]:
+        return list(self.card_deck[: self.card_valid])
+
+    def rotate_card_deck(self) -> None:
+        first = self.card_deck.pop(0)
+        self.card_deck.append(first)
 
     def holy_water_rate_per_time(self) -> float:
         multiplier = 1.0
@@ -123,13 +181,16 @@ class PlayerRole(Role):
         if unit_name not in self.available_cards:
             raise KeyError(f"unit card not found: {unit_name}")
 
+        card = self.available_cards[unit_name]
+        if self.holy_water < card.consume:
+            raise ValueError(f"holy water is not enough: need {card.consume}, current {self.holy_water}")
+
         spawn_node = node_name or self.current_location
         self._campus_map.get_node(spawn_node)
+        self.holy_water -= card.consume
 
         unit_id = f"{self.name}-U{self._next_unit_seq}"
         self._next_unit_seq += 1
-
-        card = self.available_cards[unit_name]
         deployed = DeployedUnit(
             unit_id=unit_id,
             owner_name=self.name,
@@ -140,6 +201,15 @@ class PlayerRole(Role):
             deployed_time=self._global_config.current_time_unit,
         )
         self.active_units[unit_id] = deployed
+        return deployed
+
+    def deploy_from_deck(self, card_name: str | None = None, node_name: str | None = None) -> DeployedUnit:
+        candidates = self.playable_cards()
+        chosen = card_name or candidates[0]
+        if chosen not in candidates:
+            raise ValueError(f"card is not currently playable: {chosen}")
+        deployed = self.deploy_unit(chosen, node_name=node_name)
+        self.rotate_card_deck()
         return deployed
 
     def remove_unit(self, unit_id: str) -> None:

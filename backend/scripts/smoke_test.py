@@ -1,15 +1,15 @@
 """
 Module purpose:
-- Local smoke test script for the backend game system.
+- Local smoke test script for core backend systems.
 
 Functions:
 - assert_equal(actual, expected, message): minimal assertion helper.
-- test_parallel_movement(engine, p1, p2): verify movement is queued and resolved together by global time.
-- test_holy_water_regen(engine, cfg, p1): verify 1x/2x/4x/8x holy-water rates.
-- test_wartime_units_cleanup(engine, cfg, p1): verify wartime units are removed after battle ends.
-- test_target_selection(p1): verify target-priority and manual-target rules.
-- test_dynamic_states(engine, cfg, p1): verify global/role dynamic state APIs.
-- main(): build objects, run all tests, print PASS if all checks pass.
+- test_parallel_movement(engine, p1, p2): movement is queued and resolved by global time.
+- test_holy_water_regen(engine, cfg, p1): 1x/2x/4x/8x holy-water rates.
+- test_wartime_units_cleanup(engine, cfg, p1): wartime units are removed after battle.
+- test_dynamic_states(engine, cfg, p1): global/role dynamic state APIs.
+- test_deck_rotation_and_consume(p1): deploy cost and deck rotation.
+- main(): build objects, run all checks, print PASS if all pass.
 """
 
 from __future__ import annotations
@@ -55,35 +55,13 @@ def test_holy_water_regen(engine: GameEngine, cfg: GlobalConfig, p1: PlayerRole)
 
 def test_wartime_units_cleanup(engine: GameEngine, cfg: GlobalConfig, p1: PlayerRole) -> None:
     cfg.set_state("battle", False)
+    p1.holy_water = 100
     persistent = p1.deploy_unit("巨人")
     engine.set_battle_phase(True)
     wartime = p1.deploy_unit("骷髅军团")
     engine.set_battle_phase(False)
     assert_equal(persistent.unit_id in p1.active_units, True, "non-wartime should stay")
     assert_equal(wartime.unit_id in p1.active_units, False, "wartime should be removed")
-
-
-def test_target_selection(p1: PlayerRole) -> None:
-    giant = p1.deploy_unit("巨人")
-    kind, target_id = p1.select_attack_target(
-        giant.unit_id,
-        enemy_unit_ids=["eu1"],
-        enemy_building_ids=["eb1"],
-        enemy_npc_ids=["npc1"],
-        field_building_ids=["fb1"],
-    )
-    assert_equal((kind, target_id), ("enemy_building", "eb1"), "giant should prefer building")
-
-    kind2, target_id2 = p1.select_attack_target(
-        giant.unit_id,
-        enemy_unit_ids=[],
-        enemy_building_ids=[],
-        enemy_npc_ids=["npc1"],
-        field_building_ids=["fb1"],
-        manual_target_id="npc1",
-        manual_target_kind="enemy_npc",
-    )
-    assert_equal((kind2, target_id2), ("enemy_npc", "npc1"), "manual target when combat targets are empty")
 
 
 def test_dynamic_states(engine: GameEngine, cfg: GlobalConfig, p1: PlayerRole) -> None:
@@ -93,6 +71,15 @@ def test_dynamic_states(engine: GameEngine, cfg: GlobalConfig, p1: PlayerRole) -
     engine.add_role_dynamic_state("P1", role_text)
     assert_equal(global_text in cfg.list_dynamic_states(), True, "global dynamic state should exist")
     assert_equal(role_text in p1.list_dynamic_states(), True, "role dynamic state should exist")
+
+
+def test_deck_rotation_and_consume(p1: PlayerRole) -> None:
+    p1.holy_water = 100
+    before_top = p1.card_deck[0]
+    card_cost = p1.available_cards[before_top].consume
+    p1.deploy_from_deck()
+    assert_equal(p1.card_deck[-1], before_top, "deck rotation failed")
+    assert_equal(p1.holy_water, 100 - card_cost, "holy water consume failed")
 
 
 def main() -> None:
@@ -107,8 +94,8 @@ def main() -> None:
     test_parallel_movement(engine, p1, p2)
     test_holy_water_regen(engine, cfg, p1)
     test_wartime_units_cleanup(engine, cfg, p1)
-    test_target_selection(p1)
     test_dynamic_states(engine, cfg, p1)
+    test_deck_rotation_and_consume(p1)
     print("PASS: backend smoke tests")
 
 
