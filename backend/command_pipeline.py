@@ -10,8 +10,8 @@ Core design:
 Supported syntax summary:
 - Comment/blank: lines starting with `#` or empty lines are ignored.
 - Assignment: `left=right`
-- Append text: `left+=text`
-- Remove text: `left-=text`
+- Append/remove text: `left+=text`, `left-=text` for `global.state` / `<role>.state`
+- Numeric delta: `left+=number`, `left-=number` for numeric fields
 
 Queue commands:
 - `<role>.move=<node>`
@@ -83,11 +83,11 @@ class CommandPipeline:
 
         if "+=" in line:
             left, right = line.split("+=", 1)
-            self._apply_append(left.strip(), right.strip())
+            self._apply_plus(left.strip(), right.strip())
             return
         if "-=" in line:
             left, right = line.split("-=", 1)
-            self._apply_remove(left.strip(), right.strip())
+            self._apply_minus(left.strip(), right.strip())
             return
         if "=" in line:
             left, right = line.split("=", 1)
@@ -120,7 +120,7 @@ class CommandPipeline:
         self.runtime_messages.append(f"queue flushed: {executed} message(s)")
         return list(self.runtime_messages)
 
-    def _apply_append(self, left: str, right: str) -> None:
+    def _apply_plus(self, left: str, right: str) -> None:
         if left == "global.state":
             self.engine.add_global_dynamic_state(right)
             self.runtime_messages.append("global dynamic state appended")
@@ -130,9 +130,9 @@ class CommandPipeline:
             self.engine.add_role_dynamic_state(role_name, right)
             self.runtime_messages.append(f"role dynamic state appended: {role_name}")
             return
-        raise ValueError(f"unsupported append command: {left}+=")
+        self._apply_numeric_delta(left, right, sign=1.0)
 
-    def _apply_remove(self, left: str, right: str) -> None:
+    def _apply_minus(self, left: str, right: str) -> None:
         if left == "global.state":
             self.engine.global_config.remove_dynamic_state(right)
             self.runtime_messages.append("global dynamic state removed")
@@ -143,7 +143,7 @@ class CommandPipeline:
             role.remove_dynamic_state(right)
             self.runtime_messages.append(f"role dynamic state removed: {role_name}")
             return
-        raise ValueError(f"unsupported remove command: {left}-=")
+        self._apply_numeric_delta(left, right, sign=-1.0)
 
     def _apply_assign(self, left: str, right: str, source_line: str) -> None:
         if left == "queue.flush":
@@ -244,6 +244,50 @@ class CommandPipeline:
             player.remove_unit(unit_id)
             return
         player.active_units[unit_id].current_health = value
+
+    def _apply_numeric_delta(self, left: str, right: str, sign: float) -> None:
+        delta = self._parse_float(right) * sign
+        if left == "time.advance":
+            if delta < 0:
+                raise ValueError("time.advance-= is not supported.")
+            self._assert_half_step(delta)
+            self.engine.advance_time(delta)
+            self.runtime_messages.append(f"time advanced: +{delta}")
+            return
+
+        left_parts = left.split(".")
+        if len(left_parts) < 2:
+            raise ValueError(f"unsupported numeric delta command: {left}")
+        role_name = left_parts[0]
+        field = left_parts[1]
+        role = self.engine.get_role(role_name)
+
+        if field == "health":
+            self.engine.set_role_health(role_name, role.health + delta)
+            self.runtime_messages.append(f"health changed: {role_name} ({delta:+g})")
+            return
+        if field == "holy_water":
+            player = self.engine.get_player(role_name)
+            self.engine.set_player_holy_water(role_name, player.holy_water + delta)
+            self.runtime_messages.append(f"holy_water changed: {role_name} ({delta:+g})")
+            return
+        if field == "card_valid":
+            if abs(delta - round(delta)) > 1e-9:
+                raise ValueError("card_valid delta must be an integer.")
+            player = self.engine.get_player(role_name)
+            player.set_card_valid(player.card_valid + int(round(delta)))
+            self.runtime_messages.append(f"card_valid changed: {role_name} ({int(round(delta)):+d})")
+            return
+        if field == "unit" and len(left_parts) == 4 and left_parts[3] == "health":
+            unit_id = left_parts[2]
+            player = self.engine.get_player(role_name)
+            if unit_id not in player.active_units:
+                raise KeyError(f"active unit not found: {unit_id}")
+            next_health = player.active_units[unit_id].current_health + delta
+            self._set_runtime_unit_health(role_name, unit_id, next_health)
+            self.runtime_messages.append(f"runtime unit health changed: {role_name}.{unit_id} ({delta:+g})")
+            return
+        raise ValueError(f"unsupported numeric delta command: {left}")
 
     @staticmethod
     def _parse_bool(text: str) -> bool:

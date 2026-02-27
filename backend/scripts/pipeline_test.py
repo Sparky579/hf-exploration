@@ -39,7 +39,11 @@ def main() -> None:
     P1.location=正门
     P1.health=8
     P1.holy_water=20
+    P1.holy_water+=1
+    P1.holy_water-=0.5
+    P1.health-=1
     P1.card_valid=4
+    P1.card_valid+=1
     global.state+=全局动态：演练开始
     P1.state+=角色动态：进入战备
     P1.nearby_units=地狱飞龙:full,巨人:damaged
@@ -62,7 +66,9 @@ def main() -> None:
     pipeline.compile_script(script)
 
     assert_true(p1.current_location == "东教学楼南", "move should be completed after 1 time unit")
-    assert_true(p1.health == 8, "role health should be updated")
+    assert_true(p1.health == 7, "role health +=/-= should be updated")
+    assert_true(p1.card_valid == 5, "card_valid += should be updated")
+    assert_true(abs(p1.holy_water - 18.0) < 1e-9, "holy_water +=/-= and regen should be consistent")
     assert_true("全局动态：演练开始" in cfg.list_dynamic_states(), "global dynamic text missing")
     assert_true("角色动态：进入战备" in p1.list_dynamic_states(), "role dynamic text missing")
     assert_true("巨人" not in p1.list_nearby_units(), "dead nearby unit should be removed")

@@ -8,8 +8,8 @@
 - 空行和 `#` 开头的行会被忽略。
 - 支持三种操作符：
   - `=` 赋值/指令
-  - `+=` 追加文本状态
-  - `-=` 删除文本状态
+  - `+=` 文本追加或数值增量
+  - `-=` 文本删除或数值减量
 
 ## 2. 队列与即时执行
 
@@ -30,6 +30,12 @@
   - `<角色名>.unit.<unit_id>.health=<数值>`
   - `global.state+=<文本>` / `global.state-=<文本>`
   - `<角色名>.state+=<文本>` / `<角色名>.state-=<文本>`
+- **数值增减**（编译时立即生效）：
+  - `<角色名>.holy_water+=<数值>` / `<角色名>.holy_water-=<数值>`
+  - `<角色名>.health+=<数值>` / `<角色名>.health-=<数值>`
+  - `<角色名>.card_valid+=<整数>` / `<角色名>.card_valid-=<整数>`
+  - `<角色名>.unit.<unit_id>.health+=<数值>` / `<角色名>.unit.<unit_id>.health-=<数值>`
+  - `time.advance+=<数值>`（等价 `time.advance=<数值>`，且必须是 0.5 倍数）
 - 队列控制：
   - `queue.flush=true` 执行所有排队消息
   - `queue.clear=true` 清空队列
@@ -63,6 +69,10 @@
 P1.location=正门
 P1.health=8
 P1.holy_water=20
+P1.holy_water+=1
+P1.holy_water-=0.5
+P1.health-=1
+P1.card_valid+=1
 global.state+=全局动态：演练开始
 P1.state+=角色动态：进入战备
 P1.nearby_units=地狱飞龙:full,巨人:damaged
