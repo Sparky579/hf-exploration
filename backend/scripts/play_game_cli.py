@@ -102,8 +102,6 @@ def play_loop(api_key: str, model: str) -> None:
 
         if final_packet is not None:
             system_text = str(final_packet.get("main_text", "")).strip()
-            if len(system_text) > 220:
-                system_text = system_text[:220] + "..."
             recent_turns = [*recent_turns[-2:], f"User: {user_input}", f"System: {system_text}"]
 
         if engine.game_over:

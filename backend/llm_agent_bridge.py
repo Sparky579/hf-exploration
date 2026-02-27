@@ -382,10 +382,11 @@ class LLMAgentBridge:
         For model-generated commands, holy water is runtime-managed by time/deploy rules.
         """
 
-        if source not in ("Narrative", "Enemy", "EnemyInit"):
-            return False
-        normalized = line.strip().lower()
-        return ".holy_water" in normalized
+        # if source not in ("Narrative", "Enemy", "EnemyInit"):
+        #     return False
+        # normalized = line.strip().lower()
+        # return ".holy_water" in normalized
+        return False
 
     @staticmethod
     def _flatten_commands(text: str) -> list[str]:
