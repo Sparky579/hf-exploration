@@ -466,7 +466,7 @@ class GameEngine:
         if self.global_config.is_emergency_phase:
             multiplier *= 2.0
         if self.global_config.is_battle_phase:
-            multiplier *= 4.0
+            multiplier *= 2.0
         return BASE_HOLY_WATER_PER_TIME * multiplier
 
     def _regenerate_companion_holy_water(self, amount: float) -> None:
@@ -507,7 +507,7 @@ class GameEngine:
         # 许琪琪：仅在东教学楼内部/北侧且时间不在[6,9]可发现
         xu_state = self.global_config.get_companion_state("许琪琪")
         if not bool(xu_state["discovered"]):
-            if main_node in ("东教学楼内部", "东教学楼北") and not (6 <= now <= 9):
+            if main_node in ("东教学楼内部", "东教学楼北") and (3 < now < 8):
                 self.global_config.set_companion_discovered("许琪琪", True)
                 self.global_config.add_dynamic_state("你在东教学楼北侧路径上发现了许琪琪")
 
@@ -527,7 +527,7 @@ class GameEngine:
         if companion_name == "冬雨":
             return node == "图书馆"
         if companion_name == "许琪琪":
-            return node in ("东教学楼内部", "东教学楼北") and not (6 <= now <= 9)
+            return node in ("东教学楼内部", "东教学楼北") and 3 < now < 8
         if companion_name == "马超鹏":
             return now < 4 and node == "东教学楼内部"
         return False

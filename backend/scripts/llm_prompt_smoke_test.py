@@ -63,6 +63,7 @@ def main() -> None:
         "world_base_setting",
         "global_state",
         "main_player_state",
+        "team_move_profile",
         "current_scene",
         "console_syntax",
         "recent_command_logs",
@@ -76,6 +77,11 @@ def main() -> None:
     assert_true("owner" in triggers[0], "trigger should include owner")
     assert_true("handled" in triggers[0], "trigger should include handled flag")
     assert_true("trigger_window_n_to_n_plus_1_5" in context["global_state"], "missing trigger window field")
+    assert_true("main_player_move_time_cost" in context["global_state"], "missing move-time hint in global_state")
+    assert_true(
+        "effective_move_time_cost" in context["team_move_profile"],
+        "missing move-time hint in team_move_profile",
+    )
 
     main_prompt = build_narrative_prompt(context)
     init_prompt = build_enemy_initial_trigger_prompt(context, enemy_roles=["ENEMY_A"])

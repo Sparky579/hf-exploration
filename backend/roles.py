@@ -185,7 +185,7 @@ class PlayerRole(Role):
         if self._global_config.is_emergency_phase:
             multiplier *= 2.0
         if self._global_config.is_battle_phase:
-            multiplier *= 4.0
+            multiplier *= 2.0
         return BASE_HOLY_WATER_PER_TIME * multiplier
 
     def regenerate_holy_water(self, time_delta: float) -> float:

@@ -27,7 +27,7 @@
 
 - 全局：
   - `global.main_player=<玩家>`
-  - `global.battle=<目标|none|true|false>`
+  - `global.battle=<目标角色名|none>`
   - `global.emergency=<true|false>`
   - `global.team=<同伴1,同伴2,...>`
   - `global.team+=<同伴>`
@@ -82,6 +82,7 @@
   - `trigger.add=<句子>`
   - `trigger.remove=<id 或原句>`
   - `trigger.clear=true`
+  - `scene_event.trigger=<event_id>`
   - `event.rocket_launch=<建筑或地点>`
 
 ## 4. Trigger 句子格式

@@ -75,7 +75,7 @@ def main() -> None:
     assert_true(p1.current_location == "东教学楼南", "move should complete after one time unit")
     assert_true(p1.health == 7, "role health +=/-= should be updated")
     assert_true(p1.card_valid == 5, "card_valid += should be updated")
-    assert_true(abs(p1.holy_water - 19.5) < 1e-9, "holy_water +=/-=, consume, and battle regen should be consistent")
+    assert_true(abs(p1.holy_water - 18.0) < 1e-9, "holy_water +=/-=, consume, and battle regen should be consistent")
     assert_true("全局动态：演练开始" in cfg.list_dynamic_states(), "global dynamic text missing")
     assert_true("角色动态：进入战备" in p1.list_dynamic_states(), "role dynamic text missing")
     assert_true("巨人" not in p1.list_nearby_units(), "dead nearby unit should be removed")
@@ -86,7 +86,7 @@ def main() -> None:
     assert_true(not campus.is_node_valid("宿舍"), "destroyed node valid flag should be false")
     assert_true("时间9摧毁宿舍" in engine.get_character_profile("李再斌").history, "character history missing")
     assert_true(engine.get_character_profile("颜宏帆").status == "死亡", "leaving campus should map to dead")
-    assert_true(abs(cfg.current_time_unit - 1.5) < 1e-9, "time should be 1.5")
+    assert_true(abs(cfg.current_time_unit - 2.5) < 1e-9, "time should be 2.5")
     assert_true(len(pipeline.message_queue) == 0, "queue should be empty after flush")
 
     # destroyed node should block internal actions

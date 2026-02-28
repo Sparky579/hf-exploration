@@ -39,6 +39,12 @@ class TriggerState:
 class GlobalEventChecker:
     """Run story trigger checks and escape validations."""
 
+    OPENING_HOTSPOT_BRANCH = "开场分支:借马超鹏热点更新"
+    OPENING_FLOW_BRANCH = "开场分支:流量更新"
+    OPENING_NOTICE_DONE = "开场事件:马超鹏已在课堂提醒他也注意到了更新"
+    OPENING_HANDOFF_DONE = "开场事件:马超鹏已主动交付主手机"
+    OPENING_MAIN_PHONE_HELD = "开场事件:主控已持有马超鹏主手机"
+
     BUILDING_NODE_MAP: dict[str, list[str]] = {
         "东教学楼": ["东教学楼南", "东教学楼内部", "东教学楼北"],
         "西教学楼": ["西教学楼南", "西教学楼北"],
@@ -62,6 +68,7 @@ class GlobalEventChecker:
         """Check all trigger conditions based on current world time and map state."""
 
         now = self.engine.global_config.current_time_unit
+        self._check_opening_phone_story(now)
         if (not self.state.alert_triggered) and now > self.story_setting.alert_trigger_time:
             self.state.alert_triggered = True
             self.engine.global_config.add_global_state("警报状态")
@@ -201,6 +208,10 @@ class GlobalEventChecker:
             self.engine.set_role_health(role_name, 0)
             self._mark_character_dead_if_exists(role_name)
 
+        # Winter Rain special rule:
+        # if 图书馆 collapses and 冬雨 is not in main player's team, she is marked dead.
+        self._apply_dongyu_library_collapse_rule(affected_nodes, now)
+
         if affected_nodes:
             joined_nodes = ",".join(affected_nodes)
             self.engine.global_config.add_dynamic_state(f"{target}坍塌，影响区域：{joined_nodes}")
@@ -241,3 +252,56 @@ class GlobalEventChecker:
                 return True
             return not bool(state.get("in_team", False))
         return True
+
+    def _apply_dongyu_library_collapse_rule(self, affected_nodes: list[str], now: float) -> None:
+        if "图书馆" not in set(affected_nodes):
+            return
+        try:
+            state = self.engine.global_config.get_companion_state("冬雨")
+        except KeyError:
+            return
+        if bool(state.get("in_team", False)):
+            return
+        self._apply_character_death("冬雨", "图书馆坍塌", now)
+
+    def _check_opening_phone_story(self, now: float) -> None:
+        """
+        Opening deterministic flow:
+        - Hotspot branch at t>=2: add classroom notice that 马超鹏 also noticed the update.
+        - Hotspot branch at t>=3 and main player still has no usable phone:
+          马超鹏主动提出交付主手机, switch main deck.
+        """
+
+        states = set(self.engine.global_config.dynamic_states)
+        if self.OPENING_HOTSPOT_BRANCH not in states:
+            return
+
+        if now >= 2 and self.OPENING_NOTICE_DONE not in states:
+            self.engine.global_config.add_dynamic_state(
+                "马超鹏低声提醒：他也注意到了这次超现实更新。"
+            )
+            self.engine.global_config.add_dynamic_state(self.OPENING_NOTICE_DONE)
+            self.state.trigger_history.append(f"t={now}: 开场事件 -> 马超鹏提醒更新")
+
+        if now < 3 or self.OPENING_HANDOFF_DONE in states:
+            return
+        if self.engine.main_player_name is None:
+            return
+
+        # Only force handoff when the main player still has no usable client/phone.
+        if self.engine.global_config.main_game_state not in ("confiscated", "not_installed", "downloading"):
+            return
+
+        main_name = self.engine.main_player_name
+        self.engine.set_companion_discovered("马超鹏", True)
+        self.engine.set_companion_in_team("马超鹏", True)
+        ma_profile = self.engine.get_companion_profile("马超鹏")
+        self.engine.set_player_card_deck(main_name, list(ma_profile.deck))
+        self.engine.set_main_game_state("installed")
+        self.engine.set_player_holy_water(main_name, 0.0)
+        self.engine.global_config.add_dynamic_state(
+            "骷髅骚乱爆发时，马超鹏主动把他的主手机塞给了你；你原本被收走的手机从此无法找回。"
+        )
+        self.engine.global_config.add_dynamic_state(self.OPENING_MAIN_PHONE_HELD)
+        self.engine.global_config.add_dynamic_state(self.OPENING_HANDOFF_DONE)
+        self.state.trigger_history.append(f"t={now}: 开场事件 -> 马超鹏交机并切换主控卡组")

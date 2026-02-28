@@ -39,7 +39,7 @@ class GlobalConfig:
 
     def __init__(
         self,
-        current_time_unit: float = 0.0,
+        current_time_unit: float = 1.0,
         global_states: list[str] | None = None,
         dynamic_states: list[str] | None = None,
         battle_state: str | None = None,

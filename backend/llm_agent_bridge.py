@@ -14,6 +14,7 @@ Class:
     - bootstrap initial enemy trigger once,
     - each round pre-promote enemy triggers within [N, N+1],
     - hidden thread handles these due triggers in parallel with narrative stream,
+    - after narrative time jumps, run one immediate catch-up pass for newly-fired enemy triggers,
     - ensure each alive enemy has a next future trigger.
 """
 
@@ -56,6 +57,9 @@ class LLMAgentBridge:
         recent_user_turns: list[str],
         current_user_input: str,
         apply_commands: bool = True,
+        backend_step_notes: list[str] | None = None,
+        allow_narrative_time_advance: bool = True,
+        block_main_player_move: bool = False,
     ) -> Generator[dict[str, Any], None, None]:
         """
         Stream one step:
@@ -67,12 +71,14 @@ class LLMAgentBridge:
         errors: list[str] = []
         init_enemy_text = ""
         enemy_text = ""
+        enemy_post_text = ""
 
         context = build_step_context(
             engine=pipeline.engine,
             pipeline=pipeline,
             recent_user_turns=recent_user_turns,
             current_user_input=current_user_input,
+            backend_step_notes=backend_step_notes,
         )
         enemy_roles = self._alive_enemy_roles(context)
 
@@ -86,6 +92,7 @@ class LLMAgentBridge:
                 pipeline=pipeline,
                 recent_user_turns=recent_user_turns,
                 current_user_input=current_user_input,
+                backend_step_notes=backend_step_notes,
             )
 
         now = float(context["global_state"]["time"])
@@ -101,9 +108,19 @@ class LLMAgentBridge:
                     pipeline=pipeline,
                     recent_user_turns=recent_user_turns,
                     current_user_input=current_user_input,
+                    backend_step_notes=backend_step_notes,
                 )
 
         due_enemy_triggers = self._collect_due_enemy_triggers(context, enemy_roles, enemy_window_end)
+        if apply_commands and enemy_roles:
+            due_enemy_triggers = self._ensure_battle_enemy_due_trigger(
+                pipeline=pipeline,
+                context=context,
+                enemy_roles=enemy_roles,
+                due_enemy_triggers=due_enemy_triggers,
+                applied=applied,
+                errors=errors,
+            )
         narrative_prompt = build_narrative_prompt(context)
         enemy_prompt = (
             build_enemy_trigger_prompt(context, enemy_roles, due_enemy_triggers)
@@ -150,7 +167,24 @@ class LLMAgentBridge:
                 applied=applied,
                 errors=errors,
                 source="Narrative",
-                allow_time_advance=True,
+                allow_time_advance=allow_narrative_time_advance,
+                block_main_player_move=block_main_player_move,
+            )
+            self._flush_queue_if_needed(
+                pipeline=pipeline,
+                commands=narrative_commands,
+                applied=applied,
+                errors=errors,
+                source="Narrative",
+            )
+            enemy_post_text = self._run_enemy_catchup_after_narrative(
+                pipeline=pipeline,
+                recent_user_turns=recent_user_turns,
+                current_user_input=current_user_input,
+                backend_step_notes=backend_step_notes,
+                enemy_roles=enemy_roles,
+                applied=applied,
+                errors=errors,
             )
             self._ensure_future_enemy_triggers(pipeline, enemy_roles, applied)
 
@@ -159,6 +193,7 @@ class LLMAgentBridge:
             "main_text": main_text,
             "enemy_init_text": init_enemy_text,
             "enemy_text": enemy_text,
+            "enemy_post_text": enemy_post_text,
             "enemy_roles": enemy_roles,
             "enemy_window_end": enemy_window_end,
             "promoted_enemy_trigger_ids": promoted_ids,
@@ -168,6 +203,109 @@ class LLMAgentBridge:
             "applied_commands": applied,
             "errors": errors,
         }
+
+    def _run_enemy_catchup_after_narrative(
+        self,
+        pipeline: CommandPipeline,
+        recent_user_turns: list[str],
+        current_user_input: str,
+        backend_step_notes: list[str] | None,
+        enemy_roles: list[str],
+        applied: list[str],
+        errors: list[str],
+    ) -> str:
+        """
+        After narrative commands are applied, process any enemy triggers that became due
+        because of this round's time jump (e.g. [time.advance=2]).
+        """
+
+        if not enemy_roles:
+            return ""
+        context = build_step_context(
+            engine=pipeline.engine,
+            pipeline=pipeline,
+            recent_user_turns=recent_user_turns,
+            current_user_input=current_user_input,
+            backend_step_notes=backend_step_notes,
+        )
+        now = float(context["global_state"]["time"])
+        due_enemy_triggers = self._collect_due_enemy_triggers(context, enemy_roles, window_end=now)
+        due_enemy_triggers = self._ensure_battle_enemy_due_trigger(
+            pipeline=pipeline,
+            context=context,
+            enemy_roles=enemy_roles,
+            due_enemy_triggers=due_enemy_triggers,
+            applied=applied,
+            errors=errors,
+        )
+        if not due_enemy_triggers:
+            return ""
+
+        prompt = build_enemy_trigger_prompt(context, enemy_roles, due_enemy_triggers)
+        text = self.client.generate_text(prompt)
+        commands = self._flatten_commands(text)
+        self._apply_commands(
+            pipeline=pipeline,
+            commands=commands,
+            applied=applied,
+            errors=errors,
+            source="EnemyCatchup",
+            allow_time_advance=False,
+        )
+        self._flush_enemy_queue_if_needed(pipeline, commands, applied, errors)
+        for item in due_enemy_triggers:
+            try:
+                pipeline.engine.global_config.mark_trigger_handled(int(item["id"]))
+            except Exception as exc:
+                errors.append(f"EnemyCatchup handled-mark failed: #{item['id']} -> {exc}")
+        return text
+
+    def _ensure_battle_enemy_due_trigger(
+        self,
+        pipeline: CommandPipeline,
+        context: dict[str, Any],
+        enemy_roles: list[str],
+        due_enemy_triggers: list[dict[str, Any]],
+        applied: list[str],
+        errors: list[str],
+    ) -> list[dict[str, Any]]:
+        """
+        Ensure hidden enemy thread has one due trigger in battle rounds so enemy can react/deploy.
+        """
+
+        battle_target = str(context.get("global_state", {}).get("battle_state") or "")
+        if not battle_target or battle_target not in enemy_roles:
+            return due_enemy_triggers
+        if not self._role_is_alive(pipeline, battle_target):
+            return due_enemy_triggers
+        if any(str(item.get("owner", "")) == battle_target for item in due_enemy_triggers):
+            return due_enemy_triggers
+
+        now = float(context.get("global_state", {}).get("time", 0.0))
+        trigger_sentence = (
+            f"owner:{battle_target}|time {now:g} if {battle_target} alive and in battle "
+            f"then {battle_target} battle_react"
+        )
+        line = f"trigger.add={trigger_sentence}"
+        try:
+            item = pipeline.engine.global_config.add_scripted_trigger(trigger_sentence)
+            pipeline.engine.global_config.mark_trigger_fired(int(item["id"]))
+            applied.append(line)
+        except Exception as exc:
+            errors.append(f"Battle enemy trigger inject failed: {battle_target} -> {exc}")
+            return due_enemy_triggers
+
+        refreshed = build_step_context(
+            engine=pipeline.engine,
+            pipeline=pipeline,
+            recent_user_turns=context.get("recent_user_turns", []),
+            current_user_input=str(context.get("current_user_input", "")),
+            backend_step_notes=context.get("backend_step_notes"),
+        )
+        refreshed_due = self._collect_due_enemy_triggers(
+            refreshed, enemy_roles, window_end=float(refreshed["global_state"]["time"])
+        )
+        return refreshed_due
 
     def _bootstrap_enemy_triggers_if_needed(
         self,
@@ -342,9 +480,14 @@ class LLMAgentBridge:
         errors: list[str],
         source: str,
         allow_time_advance: bool,
+        block_main_player_move: bool = False,
     ) -> None:
+        main_player = pipeline.engine.main_player_name or ""
         for line in commands:
             if (not allow_time_advance) and line.startswith("time.advance"):
+                continue
+            if block_main_player_move and main_player and line.startswith(f"{main_player}.move"):
+                errors.append(f"{source} command blocked: {line} -> main player move is backend-handled this round")
                 continue
             if LLMAgentBridge._is_forbidden_holy_water_command(source, line):
                 errors.append(f"{source} command blocked: {line} -> holy_water is system-managed")
@@ -375,6 +518,30 @@ class LLMAgentBridge:
             applied.append("queue.flush=true")
         except Exception as exc:
             errors.append(f"Enemy auto queue.flush failed: {exc}")
+
+    @staticmethod
+    def _flush_queue_if_needed(
+        pipeline: CommandPipeline,
+        commands: list[str],
+        applied: list[str],
+        errors: list[str],
+        source: str,
+    ) -> None:
+        """
+        Ensure queued move/deploy commands from model are executed even if queue.flush is omitted.
+        """
+
+        if not commands:
+            return
+        has_queue_action = any(".move=" in line or ".deploy=" in line for line in commands)
+        has_explicit_flush = any(line.strip() == "queue.flush=true" for line in commands)
+        if (not has_queue_action) or has_explicit_flush:
+            return
+        try:
+            pipeline.compile_line("queue.flush=true")
+            applied.append("queue.flush=true")
+        except Exception as exc:
+            errors.append(f"{source} auto queue.flush failed: {exc}")
 
     @staticmethod
     def _is_forbidden_holy_water_command(source: str, line: str) -> bool:

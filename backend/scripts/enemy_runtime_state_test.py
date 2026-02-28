@@ -68,7 +68,7 @@ def main() -> None:
     pipe.compile_line("[global.battle=李再斌]")
     pipe.compile_line("[global.emergency=true]")
     engine.advance_time(1.0)
-    assert_close(enemy_player.holy_water, 5.0, "enemy should gain +4 in battle+emergency")
+    assert_close(enemy_player.holy_water, 3.0, "enemy should gain +2 in battle+emergency")
     assert_close(main_player.holy_water, 0.0, "main install gate should still clamp holy water")
 
     print("PASS: enemy runtime state test")

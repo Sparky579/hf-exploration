@@ -5,7 +5,7 @@ Module purpose:
 Functions:
 - assert_equal(actual, expected, message): minimal assertion helper.
 - test_parallel_movement(engine, p1, p2): movement is queued and resolved by global time.
-- test_holy_water_regen(engine, cfg, p1): 1x/2x/4x/8x holy-water rates.
+- test_holy_water_regen(engine, cfg, p1): 1x/2x/2x/4x holy-water rates.
 - test_wartime_units_cleanup(engine, cfg, p1): wartime units are removed after battle.
 - test_dynamic_states(engine, cfg, p1): global/role dynamic state APIs.
 - test_deck_rotation_and_consume(p1): deploy cost and deck rotation.
@@ -41,8 +41,8 @@ def test_holy_water_regen(engine: GameEngine, cfg: GlobalConfig, p1: PlayerRole)
     cases = [
         (False, False, 2, 1.0),
         (True, False, 1, 1.0),
-        (False, True, 1, 2.0),
-        (True, True, 1, 4.0),
+        (False, True, 1, 1.0),
+        (True, True, 1, 2.0),
     ]
     for emergency, battle, dt, expected in cases:
         cfg.current_time_unit = 0

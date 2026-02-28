@@ -24,7 +24,7 @@ Queue commands:
 
 Immediate state commands:
 - `time.advance=<number>` (must be multiple of 0.5)
-- `global.battle=<target_role_name|none|true|false>`
+- `global.battle=<target_role_name|none>`
 - `global.emergency=<true|false>`
 - `global.main_player=<player_name>`
 - `global.main_game_state=<installed|downloading|not_installed|confiscated>`
@@ -46,6 +46,7 @@ Immediate state commands:
 - `trigger.add=<trigger sentence>`
 - `trigger.remove=<id_or_text>`
 - `trigger.clear=true`
+- `scene_event.trigger=<event_id>`
 - `event.rocket_launch=<building_or_node_name>`
 
 Companion commands:
@@ -296,6 +297,10 @@ class CommandPipeline:
             if self._parse_bool(right):
                 self.engine.global_config.clear_scripted_triggers()
                 self.runtime_messages.append("trigger list cleared")
+            return
+        if left == "scene_event.trigger":
+            self._apply_scene_event_trigger(right.strip())
+            self.runtime_messages.append(f"scene event triggered: {right.strip()}")
             return
         if left == "event.rocket_launch":
             target = right.strip()
@@ -582,8 +587,43 @@ class CommandPipeline:
         if lowered in ("none", "null", "", "false", "off", "0"):
             return None
         if lowered in ("true", "on", "1", "yes"):
-            return "__BATTLE__"
+            raise ValueError("global.battle must be a role name or none; boolean battle is not supported.")
         return text.strip()
+
+    def _apply_scene_event_trigger(self, event_id: str) -> None:
+        """
+        Apply one known scene event by event id.
+        """
+
+        if not event_id:
+            raise ValueError("scene_event.trigger requires a non-empty event id.")
+        if event_id == "east_toilet_yanhongfan_encounter":
+            self._trigger_east_toilet_yanhongfan_encounter()
+            return
+        raise ValueError(f"unknown scene event id: {event_id}")
+
+    def _trigger_east_toilet_yanhongfan_encounter(self) -> None:
+        marker = "场景事件:厕所遭遇颜宏帆已触发"
+        if marker in self.engine.global_config.dynamic_states:
+            return
+        if self.engine.main_player_name is None:
+            raise ValueError("global main_player must be set before scene_event.trigger.")
+        main_name = self.engine.main_player_name
+        now = float(self.engine.global_config.current_time_unit)
+        if now > 5.0:
+            raise ValueError("scene event no longer available: time window exceeded.")
+        if self.engine.get_role(main_name).current_location != "东教学楼内部":
+            raise ValueError("scene event requires main player at 东教学楼内部.")
+        if "颜宏帆" not in self.engine.campus_map.roles:
+            raise ValueError("scene event target role missing: 颜宏帆")
+        if self.engine.get_role("颜宏帆").health <= 0:
+            raise ValueError("scene event target role is dead: 颜宏帆")
+
+        self.engine.set_main_player(main_name)
+        self.engine.set_battle_state("颜宏帆")
+        self.engine.set_role_battle_target(main_name, "颜宏帆")
+        self.engine.set_role_battle_target("颜宏帆", main_name)
+        self.engine.add_global_dynamic_state(marker)
 
     @staticmethod
     def _parse_deploy_payload(text: str) -> tuple[str, str | None]:
