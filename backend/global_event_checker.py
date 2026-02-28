@@ -148,6 +148,9 @@ class GlobalEventChecker:
             trigger_time = float(item["trigger_time"])
             if now <= trigger_time:
                 continue
+            condition = str(item.get("condition", "")).strip()
+            if condition and (not self._is_scripted_condition_met(condition)):
+                continue
             item["triggered"] = True
             text = str(item["text"])
             self.engine.global_config.add_dynamic_state(f"脚本触发#{item['id']}: {text}")
@@ -171,6 +174,17 @@ class GlobalEventChecker:
             target = result.split(marker, 1)[1].strip()
             if target:
                 self._apply_structure_collapse(target, now)
+            return
+
+        death_marker = "角色死亡:"
+        if death_marker in result:
+            payload = result.split(death_marker, 1)[1].strip()
+            if payload:
+                if "|" in payload:
+                    role_name, reason = payload.split("|", 1)
+                else:
+                    role_name, reason = payload, ""
+                self._apply_character_death(role_name.strip(), reason.strip(), now)
             return
 
     def _apply_structure_collapse(self, target: str, now: float) -> None:
@@ -207,3 +221,23 @@ class GlobalEventChecker:
         profile = self.engine.character_profiles[role_name]
         if profile.status != "死亡":
             profile.set_status("死亡")
+
+    def _apply_character_death(self, role_name: str, reason: str, now: float) -> None:
+        if not role_name:
+            return
+        if role_name in self.engine.campus_map.roles:
+            self.engine.set_role_health(role_name, 0)
+        self._mark_character_dead_if_exists(role_name)
+        suffix = f"（{reason}）" if reason else ""
+        self.engine.global_config.add_dynamic_state(f"{role_name}死亡{suffix}")
+        self.state.trigger_history.append(f"t={now}: 角色死亡 -> {role_name}{suffix}")
+
+    def _is_scripted_condition_met(self, condition: str) -> bool:
+        text = condition.replace(" ", "")
+        if text in ("许琪琪未被主角邀请入队", "许琪琪未被邀请入队", "未邀请许琪琪入队"):
+            try:
+                state = self.engine.global_config.get_companion_state("许琪琪")
+            except KeyError:
+                return True
+            return not bool(state.get("in_team", False))
+        return True
