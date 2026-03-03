@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -31,56 +30,21 @@ OPENING_FLOW_BRANCH = "开场分支:流量更新"
 
 
 def _parse_numbered_options(system_text: str) -> dict[int, str]:
-    """Parse numbered options from previous system narrative text."""
-
-    rows: dict[int, str] = {}
-    for line in system_text.splitlines():
-        match = re.match(r"^\s*(\d+)\s*[\.．、]\s*(.+?)\s*$", line.strip())
-        if not match:
-            continue
-        rows[int(match.group(1))] = match.group(2).strip()
-    return rows
+    """Natural language option parsing is intentionally disabled."""
+    _ = system_text
+    return {}
 
 
 def _resolve_user_action_text(user_input: str, last_system_text: str) -> str:
-    """Resolve a numeric user input (e.g. 1/2/3) to previous option text."""
-
-    raw = user_input.strip()
-    if not raw.isdigit():
-        return raw
-    options = _parse_numbered_options(last_system_text)
-    selected = options.get(int(raw))
-    return selected if selected else raw
+    """Natural language parsing is intentionally disabled; return raw input."""
+    _ = last_system_text
+    return user_input.strip()
 
 
 def _extract_auto_move_target(action_text: str, neighbors: list[str]) -> str | None:
-    """Extract one adjacent destination from action text if it is a clear move intent."""
-
-    text = action_text.strip()
-    if not text:
-        return None
-    for blocked in ("离开", "逃离", "逃出", "翻墙", "离校"):
-        if blocked in text:
-            return None
-    for blocked in ("不去", "别去", "不要去"):
-        if blocked in text:
-            return None
-
-    ordered_neighbors = sorted(neighbors, key=len, reverse=True)
-    for node_name in ordered_neighbors:
-        if text == node_name:
-            return node_name
-        patterns = (
-            f"去{node_name}",
-            f"到{node_name}",
-            f"前往{node_name}",
-            f"走向{node_name}",
-            f"跑向{node_name}",
-            f"赶往{node_name}",
-            f"移动到{node_name}",
-        )
-        if any(p in text for p in patterns):
-            return node_name
+    """Natural language auto-move parsing is intentionally disabled."""
+    _ = action_text
+    _ = neighbors
     return None
 
 
@@ -127,29 +91,10 @@ def _apply_opening_choice_markers(
     pipeline: CommandPipeline,
     action_text: str,
 ) -> None:
-    """
-    Persist opening branch markers from direct user choices so downstream logic is deterministic.
-    """
-
-    text = action_text.strip()
-    if not text:
-        return
-
-    states = set(engine.global_config.dynamic_states)
-    hotspot_keys = ("借马超鹏热点更新", "借热点更新", "借马超鹏热点", "蹭马超鹏热点")
-    flow_keys = ("流量更新", "用流量更新")
-
-    if any(key in text for key in hotspot_keys):
-        if OPENING_HOTSPOT_BRANCH not in states:
-            pipeline.compile_line(f"[global.state+={OPENING_HOTSPOT_BRANCH}]")
-        # Hotspot route implies the main player's own phone/client is not usable for now.
-        pipeline.compile_line("[global.main_game_state=confiscated]")
-        return
-
-    if any(key in text for key in flow_keys):
-        if OPENING_FLOW_BRANCH not in states:
-            pipeline.compile_line(f"[global.state+={OPENING_FLOW_BRANCH}]")
-        return
+    """Opening-branch keyword parsing is intentionally disabled."""
+    _ = engine
+    _ = pipeline
+    _ = action_text
 
 
 def build_runtime() -> tuple[GameEngine, CommandPipeline]:
@@ -162,11 +107,15 @@ def build_runtime() -> tuple[GameEngine, CommandPipeline]:
     main_player = PlayerRole("主控玩家", campus, cfg, "东教学楼内部")
     engine.register_player(main_player)
     engine.set_main_player("主控玩家")
+    engine.set_main_game_state("not_installed")
 
     # Core non-player roles.
     Role("李再斌", campus, cfg, "宿舍")
     Role("黎诺存", campus, cfg, "西教学楼南")
     Role("颜宏帆", campus, cfg, "东教学楼内部")
+    Role("信息老师", campus, cfg, "国际部")
+    Role("陈洛", campus, cfg, "南教学楼")
+    Role("李秦彬", campus, cfg, "食堂")
 
     # Enemy runtime uses PlayerRole mechanics (holy water/deploy/card deck).
     for name, profile in engine.character_profiles.items():
@@ -189,7 +138,7 @@ def play_loop(api_key: str, model: str) -> None:
     bridge = LLMAgentBridge(client)
     recent_turns = [
         "User: 开始游戏",
-        "System: 你是向西中学的一名普通学生。最近，一款名为《皇室战争》的游戏在班级里掀起了狂热的风暴，即便是最严厉的课堂，也有人甘冒被抓的风险在课桌下偷偷沉迷于此，也包括你和你的好朋友罗宾，陈洛和马超鹏。\n枯燥的数学课上，老师正在讲解着复数的定义。这正如催眠曲般回荡。你埋下头偷偷按亮手机，一条爆炸性的消息突然跃入眼帘，好消息：《皇室战争：超现实大更新》！\n\"超现实？\"你盯着屏幕微微发愣，\"这是什么意思？以前怎么从来没听说过这个版本？\"\n尽管心中充满疑惑，但对新版本的好奇心犹如猫挠。你激动得掌心微汗，必须立刻决断，请选择：\n1. 流量更新\n2. 借马超鹏热点更新\n3. 不更新，先认真听数学课",
+        "System: 你是向西中学的一名普通学生。最近，一款名为《皇室战争》的游戏在班级里掀起了狂热的风暴，即便是最严厉的课堂，也有人甘冒被抓的风险在课桌下偷偷沉迷于此，也包括你和你的好朋友罗宾，陈洛和马超鹏。\n枯燥的数学课上，老师正在讲解着复数的定义。这正如催眠曲般回荡。你埋下头偷偷按亮手机，一条爆炸性的消息突然跃入眼帘，好消息：《皇室战争：超现实大更新》！\n\"超现实？\"你盯着屏幕微微发愣，\"这是什么意思？以前怎么从来没听说过这个版本？\"\n尽管心中充满疑惑，但对新版本的好奇心犹如猫挠。你激动得掌心微汗，必须立刻决断，请选择：\n1. 流量更新\n2. 借同桌马超鹏热点更新\n3. 不更新，先认真听数学课",
     ]
 
     print("游戏开始。输入自然语言行动；输入 `quit` 退出。")

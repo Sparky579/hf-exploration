@@ -35,22 +35,28 @@ def main() -> None:
     assert_true(not engine.event_checker.is_triggered("alert"), "alert should start as false")
     assert_true(not engine.event_checker.is_triggered("emergency"), "emergency should start as false")
 
-    pipeline.compile_line("time.advance=8")
-    assert_true(not engine.event_checker.is_triggered("alert"), "alert must require strictly > trigger time")
+    # Alert is based on absolute world time (> 8), while runtime may start at t=1.
+    start_time = float(engine.global_config.current_time_unit)
+    threshold = float(engine.story_setting.alert_trigger_time)
+    to_deadline = threshold - start_time
+    if to_deadline > 0:
+        pipeline.compile_line(f"time.advance={to_deadline:g}")
+    assert_true(
+        not engine.event_checker.is_triggered("alert"),
+        f"alert must require strictly > trigger time (now={engine.global_config.current_time_unit}, threshold={threshold})",
+    )
 
     pipeline.compile_line("time.advance=0.5")
-    assert_true(engine.event_checker.is_triggered("alert"), "alert should trigger at time > 8")
+    assert_true(engine.event_checker.is_triggered("alert"), "alert should trigger at time > threshold")
 
     pipeline.compile_line("map.德政楼.valid=false")
     pipeline.compile_line("time.advance=0.5")
     assert_true(engine.event_checker.is_triggered("emergency"), "emergency should trigger after 德政楼 destroyed + time check")
     assert_true(cfg.is_emergency_phase, "global emergency phase should be enabled")
 
-    # Explosion should trigger after emergency start + 6 time units (strictly >).
+    # Explosion should trigger at emergency start + 6 time units (>= deadline).
     pipeline.compile_line("time.advance=6")
-    assert_true(not engine.event_checker.is_triggered("explosion"), "explosion must require strictly > deadline")
-    pipeline.compile_line("time.advance=0.5")
-    assert_true(engine.event_checker.is_triggered("explosion"), "explosion should trigger after deadline")
+    assert_true(engine.event_checker.is_triggered("explosion"), "explosion should trigger at deadline")
     print("PASS: global trigger check")
 
 

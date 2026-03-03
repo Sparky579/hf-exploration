@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Activity, MapPin, Heart, Target } from 'lucide-react';
 import { fetchLogs } from '../api';
-import { LogState } from '../types';
+import type { LogState } from '../types';
 
 interface LogViewerProps {
     sessionId: string;
@@ -72,10 +72,46 @@ export default function LogViewer({ sessionId, onClose }: LogViewerProps) {
                                     {logs.pipeline_logs.length === 0 ? (
                                         <span className="text-text-muted italic">No logs available.</span>
                                     ) : (
-                                        logs.pipeline_logs.map((line, idx) => (
-                                            <div key={idx} className="mb-1">
-                                                <span className="text-[#64748b]">[{idx.toString().padStart(4, '0')}]</span>{' '}
-                                                <span className={line.includes('ERROR') ? 'text-red-400' : 'text-emerald-400'}>{line}</span>
+                                        logs.pipeline_logs.map((item, idx) => {
+                                            const line = typeof item === 'string'
+                                                ? item
+                                                : `[t=${Number(item.time ?? 0).toFixed(1)}] ${item.command ?? ''} :: ${item.detail ?? ''}`;
+                                            const status = typeof item === 'string' ? '' : String(item.status ?? '').toLowerCase();
+                                            const isError = status === 'error' || line.toLowerCase().includes('error');
+                                            return (
+                                                <div key={idx} className="mb-1">
+                                                    <span className="text-[#64748b]">[{idx.toString().padStart(4, '0')}]</span>{' '}
+                                                    <span className={isError ? 'text-red-400' : 'text-emerald-400'}>{line}</span>
+                                                </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 className="text-lg font-medium mb-3 text-text-secondary">Pending Retry Commands</h3>
+                                <div className="bg-[#0b0c10] border border-white/10 rounded-lg p-4 font-mono text-sm h-24 overflow-y-auto">
+                                    {(logs.pending_failed_commands ?? []).length === 0 ? (
+                                        <span className="text-text-muted italic">None.</span>
+                                    ) : (
+                                        (logs.pending_failed_commands ?? []).map((line, idx) => (
+                                            <div key={`${line}-${idx}`} className="text-amber-300 mb-1">{line}</div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 className="text-lg font-medium mb-3 text-text-secondary">LLM Raw Logs</h3>
+                                <div className="bg-[#0b0c10] border border-white/10 rounded-lg p-4 font-mono text-xs h-56 overflow-y-auto whitespace-pre-wrap">
+                                    {(logs.llm_logs ?? []).length === 0 ? (
+                                        <span className="text-text-muted italic">No LLM logs yet.</span>
+                                    ) : (
+                                        (logs.llm_logs ?? []).map((item, idx) => (
+                                            <div key={idx} className="mb-3 border-b border-white/10 pb-3">
+                                                <div className="text-slate-400 mb-1">#{idx + 1}</div>
+                                                <div className="text-slate-200">{JSON.stringify(item, null, 2)}</div>
                                             </div>
                                         ))
                                     )}

@@ -33,6 +33,7 @@ from .llm_prompting import (
     build_enemy_trigger_prompt,
     build_narrative_prompt,
 )
+from .openai_chat_client import OpenAIChatClient
 from .map_core import CampusMap, MapNode, build_default_campus_map
 from .narrative_assets import build_world_base_setting, get_scene_paragraph
 from .roles import PlayerRole, Role
@@ -90,4 +91,5 @@ __all__ = [
     "build_default_story_setting",
     "build_default_unit_cards",
     "get_scene_paragraph",
+    "OpenAIChatClient",
 ]

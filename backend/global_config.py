@@ -86,6 +86,7 @@ class GlobalConfig:
         if next_time > 100:
             raise ValueError("time overflow: current_time_unit cannot exceed 100.")
         self.current_time_unit = next_time
+        self.cleanup_scripted_triggers(now=self.current_time_unit)
         return self.current_time_unit
 
     def has_state(self, state: str) -> bool:
@@ -235,6 +236,7 @@ class GlobalConfig:
 
         if not isinstance(sentence, str) or not sentence.strip():
             raise ValueError("scripted trigger text must be a non-empty string.")
+        self.cleanup_scripted_triggers(now=self.current_time_unit)
         normalized = sentence.strip()
         owner, body = self._extract_trigger_owner(normalized)
         trigger_time, condition, result = self._parse_scripted_trigger_sentence(body)
@@ -271,7 +273,34 @@ class GlobalConfig:
         self.scripted_triggers.clear()
 
     def list_scripted_triggers(self) -> list[dict[str, Any]]:
+        self.cleanup_scripted_triggers(now=self.current_time_unit)
         return [dict(item) for item in self.scripted_triggers]
+
+    def shift_untriggered_trigger_times(self, delta: float) -> int:
+        """
+        Shift trigger_time for all untriggered scripted triggers.
+
+        Positive delta pushes future triggers later; negative delta brings them earlier.
+        Trigger times are clamped to [0, 100].
+        Returns number of rows updated.
+        """
+        d = float(delta)
+        if abs(d) <= 1e-9:
+            return 0
+        touched = 0
+        for item in self.scripted_triggers:
+            if bool(item.get("triggered", False)):
+                continue
+            try:
+                base = float(item.get("trigger_time", 0.0))
+            except (TypeError, ValueError):
+                base = 0.0
+            next_time = max(0.0, min(100.0, base + d))
+            if abs(next_time - base) <= 1e-9:
+                continue
+            item["trigger_time"] = next_time
+            touched += 1
+        return touched
 
     def mark_trigger_fired(self, trigger_id: int) -> None:
         trigger = self.get_scripted_trigger(trigger_id)
@@ -280,6 +309,7 @@ class GlobalConfig:
     def mark_trigger_handled(self, trigger_id: int) -> None:
         trigger = self.get_scripted_trigger(trigger_id)
         trigger["handled"] = True
+        self.cleanup_scripted_triggers(now=self.current_time_unit)
 
     def get_scripted_trigger(self, trigger_id: int) -> dict[str, Any]:
         for item in self.scripted_triggers:
@@ -288,6 +318,7 @@ class GlobalConfig:
         raise KeyError(f"scripted trigger not found: {trigger_id}")
 
     def list_fired_unhandled_triggers(self, owner: str | None = None) -> list[dict[str, Any]]:
+        self.cleanup_scripted_triggers(now=self.current_time_unit)
         rows: list[dict[str, Any]] = []
         for item in self.scripted_triggers:
             if not bool(item["triggered"]) or bool(item["handled"]):
@@ -298,10 +329,12 @@ class GlobalConfig:
         return rows
 
     def has_any_trigger_for_owner(self, owner: str) -> bool:
+        self.cleanup_scripted_triggers(now=self.current_time_unit)
         return any(str(item["owner"]) == owner for item in self.scripted_triggers)
 
     def has_future_trigger_for_owner(self, owner: str, now: float | None = None) -> bool:
         current_time = self.current_time_unit if now is None else float(now)
+        self.cleanup_scripted_triggers(now=current_time)
         for item in self.scripted_triggers:
             if str(item["owner"]) != owner:
                 continue
@@ -314,6 +347,7 @@ class GlobalConfig:
         return False
 
     def get_latest_trigger_time_for_owner(self, owner: str) -> float | None:
+        self.cleanup_scripted_triggers(now=self.current_time_unit)
         latest: float | None = None
         for item in self.scripted_triggers:
             if str(item["owner"]) != owner:
@@ -334,11 +368,14 @@ class GlobalConfig:
 
         start = float(self.current_time_unit)
         end = float(end_time)
+        self.cleanup_scripted_triggers(now=start)
         rows: list[dict[str, Any]] = []
         for item in self.scripted_triggers:
             if owner is not None and str(item["owner"]) != owner:
                 continue
             if (not include_handled) and bool(item["handled"]):
+                continue
+            if (not include_handled) and bool(item["triggered"]):
                 continue
             t = float(item["trigger_time"])
             if t < start or t > end:
@@ -346,6 +383,43 @@ class GlobalConfig:
             rows.append(dict(item))
         rows.sort(key=lambda x: (float(x["trigger_time"]), int(x["id"])))
         return rows
+
+    def cleanup_scripted_triggers(self, now: float | None = None) -> int:
+        """
+        Normalize trigger storage so one logical trigger does not appear twice.
+
+        Cleanup rules:
+        - Drop all handled triggers.
+        - Deduplicate remaining triggers by (owner, trigger_time, condition, result), keeping the earliest id.
+        """
+
+        _ = self.current_time_unit if now is None else float(now)
+        if not self.scripted_triggers:
+            return 0
+
+        kept: list[dict[str, Any]] = []
+        seen: set[tuple[str, float, str, str]] = set()
+        removed = 0
+        ordered = sorted(self.scripted_triggers, key=lambda x: int(x["id"]))
+        for item in ordered:
+            if bool(item.get("handled", False)):
+                removed += 1
+                continue
+            key = (
+                str(item.get("owner", "")),
+                float(item.get("trigger_time", 0.0)),
+                str(item.get("condition", "")),
+                str(item.get("result", "")),
+            )
+            if key in seen:
+                removed += 1
+                continue
+            seen.add(key)
+            kept.append(item)
+
+        if removed > 0:
+            self.scripted_triggers = kept
+        return removed
 
     @staticmethod
     def _extract_trigger_owner(text: str) -> tuple[str, str]:

@@ -55,8 +55,13 @@
   - `<角色>.card_valid-=<整数>`
   - `<角色>.state+=<文本>`
   - `<角色>.state-=<文本>`
-  - `<角色>.nearby_units=<单位A:full,单位B:damaged>`
-  - `<角色>.nearby_unit.<单位>=<full|damaged|dead>`
+  - `<角色>.nearby_units=<单位A:full,单位B:damaged>`（全量覆盖，不推荐）
+  - `<角色>.nearby_units+=<单位A:full,单位B:damaged>`（增量合并，推荐）
+  - `<角色>.nearby_units-=<单位A,单位B>`（按名称移除，推荐）
+  - `<角色>.nearby_unit.<单位>=<full|damaged|dead>`（支持中文同义：存活/受伤/死亡）
+  - `<角色>.nearby_unit.<单位>.health=<数值>`
+  - `<角色>.nearby_unit.<单位>.health+=<数值>`
+  - `<角色>.nearby_unit.<单位>.health-=<数值>`
   - `<角色>.unit.<unit_id>.health=<数值>`
   - `<角色>.unit.<unit_id>.health+=<数值>`
   - `<角色>.unit.<unit_id>.health-=<数值>`
@@ -83,7 +88,12 @@
   - `trigger.remove=<id 或原句>`
   - `trigger.clear=true`
   - `scene_event.trigger=<event_id>`
+  - `game_event.trigger=<event_id>`
   - `event.rocket_launch=<建筑或地点>`
+
+说明：
+- `game_event.trigger` 用于触发后端既定事件（例如游戏下载/安装）。
+- 既定事件若包含固定耗时（如 2 时间单位），由后端自动推进时间；模型不应再手动写 `time.advance`。
 
 ## 4. Trigger 句子格式
 推荐格式：
@@ -91,7 +101,7 @@
 - `角色:颜宏帆|时间3 若颜宏帆在东教学楼内部 则 颜宏帆下出小骷髅`
 
 规则：
-- 当 `current_time > trigger_time` 时，trigger 会被标记为触发。
+- 当 `current_time >= trigger_time` 时，trigger 会被标记为触发。
 - 敌对角色 trigger 会由隐藏线程处理并继续生成下一条 trigger。
 
 ## 5. 特殊事件

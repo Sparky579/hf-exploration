@@ -25,13 +25,17 @@ from dataclasses import dataclass
 
 from .character_profiles import CharacterProfile, build_default_character_profiles
 from .companion_profiles import CompanionProfile, build_default_companion_profiles
-from .constants import BASE_HOLY_WATER_PER_TIME, MOVE_TIME_COST, PHASE_EMERGENCY
+from .constants import BASE_HOLY_WATER_PER_TIME, MAX_HOLY_WATER, MOVE_TIME_COST, PHASE_EMERGENCY
 from .global_config import GlobalConfig
 from .global_event_checker import GlobalEventChecker
 from .map_core import CampusMap
 from .roles import PlayerRole, Role
 from .story_settings import GlobalStorySetting, build_default_story_setting
 from .units import DeployedUnit
+from .enemy_director import EnemyDirector
+
+MAIN_ROYALE_TOKEN_ACTIVE = "主控手机效果:皇室令牌已激活"
+MAIN_ROYALE_TOKEN_FLAG = "flag.main_royale_token_active"
 
 
 @dataclass
@@ -63,6 +67,7 @@ class GameEngine:
         for sentence in self.story_setting.opening_trigger_texts:
             self.global_config.add_scripted_trigger(sentence)
         self.event_checker = GlobalEventChecker(self, self.story_setting)
+        self.enemy_director = EnemyDirector(self)
 
         self.main_player_name: str | None = None
         self.game_over: bool = False
@@ -79,7 +84,7 @@ class GameEngine:
     def set_main_player(self, player_name: str) -> None:
         self.get_player(player_name)
         self.main_player_name = player_name
-        self._enforce_main_player_holy_water_gate()
+        self.sync_main_player_runtime_gates()
 
     def get_role(self, role_name: str) -> Role:
         if role_name not in self.campus_map.roles:
@@ -119,8 +124,6 @@ class GameEngine:
             raise ValueError(f"role is already moving: {role_name}")
 
         target_node = self.campus_map.get_node(target_node_name)
-        if not target_node.valid:
-            raise ValueError(f"cannot move to destroyed node: {target_node_name}")
 
         current_node_name = role.current_location
         current_node = self.campus_map.get_node(current_node_name)
@@ -152,8 +155,11 @@ class GameEngine:
         self._regenerate_companion_holy_water(amount)
         self._tick_romance_affection(amount)
         self._run_companion_auto_checks()
+        self._run_auto_encounter_awareness()
+        self.enemy_director.on_time_advanced(amount)
         self.event_checker.check_time_triggers()
         self._check_main_player_game_over()
+        self.sync_main_player_runtime_gates()
         return self.global_config.current_time_unit
 
     def set_emergency_phase(self, enabled: bool) -> None:
@@ -163,14 +169,16 @@ class GameEngine:
         self.set_battle_state("__BATTLE__" if enabled else None)
 
     def set_battle_state(self, target: str | None) -> None:
-        was_battle = self.global_config.is_battle_phase
         self.global_config.set_battle_state(target)
-        if was_battle and not self.global_config.is_battle_phase:
-            for player in self.players.values():
-                player.clear_wartime_units()
+        if target is None:
+            # Battle end should not wipe deployed units.
+            # Only clear stale role-vs-role target links.
+            for role in self.campus_map.roles.values():
+                role.clear_battle_target()
 
     def add_global_dynamic_state(self, text: str) -> None:
         self.global_config.add_dynamic_state(text)
+        self.sync_main_player_runtime_gates()
 
     def add_role_dynamic_state(self, role_name: str, text: str) -> None:
         role = self.get_role(role_name)
@@ -184,20 +192,34 @@ class GameEngine:
 
     def set_role_location(self, role_name: str, node_name: str) -> None:
         role = self.get_role(role_name)
-        target_node = self.campus_map.get_node(node_name)
-        if not target_node.valid:
-            raise ValueError(f"cannot set location to destroyed node: {node_name}")
+        self.campus_map.get_node(node_name)
         old_node = role.current_location
         if role_name in self._movement_tasks:
             del self._movement_tasks[role_name]
             role._finish_move(old_node)
         self.campus_map.transfer_role(role_name, old_node, node_name)
         role._finish_move(node_name)
+        self._sync_follow_units_on_owner_move(role_name, node_name)
+        if self.main_player_name is not None and role_name == self.main_player_name:
+            self._sync_team_companions_on_main_move(node_name)
         self._run_companion_auto_checks()
+        self._run_auto_encounter_awareness()
 
     def set_role_health(self, role_name: str, value: float) -> None:
         role = self.get_role(role_name)
         role.set_health(value)
+        if role.health <= 0:
+            if role_name in self.players:
+                self.players[role_name].active_units.clear()
+            # Hard rule: when a role dies, all units owned by that role die as well.
+            for player in self.players.values():
+                remove_ids = [uid for uid, unit in player.active_units.items() if unit.owner_name == role_name]
+                for uid in remove_ids:
+                    player.remove_unit(uid)
+            role.replace_nearby_units({})
+            if role_name in self.global_config.companions:
+                self.global_config.set_companion_in_team(role_name, False)
+        self.enemy_director.on_role_status_changed(role_name)
         self._check_main_player_game_over()
 
     def set_role_battle_target(self, role_name: str, target: str | None) -> None:
@@ -212,11 +234,15 @@ class GameEngine:
             if not self.global_config.can_main_player_gain_holy_water:
                 player.holy_water = 0.0
                 return
-        player.holy_water = float(value)
+        player.holy_water = min(float(value), float(MAX_HOLY_WATER))
 
     def set_main_game_state(self, state: str) -> None:
         self.global_config.set_main_game_state(state)
+        self.sync_main_player_runtime_gates()
+
+    def sync_main_player_runtime_gates(self) -> None:
         self._enforce_main_player_holy_water_gate()
+        self._enforce_main_player_card_valid_gate()
 
     def set_player_card_deck(self, player_name: str, deck: list[str]) -> None:
         self.get_player(player_name).set_card_deck(deck)
@@ -285,6 +311,8 @@ class GameEngine:
 
     def discover_companion(self, actor_role_name: str, companion_name: str) -> None:
         self.get_companion_profile(companion_name)
+        if not self._is_companion_alive(companion_name):
+            raise ValueError(f"companion is not alive: {companion_name}")
         if not self._can_discover_companion(actor_role_name, companion_name):
             raise ValueError(f"companion is not discoverable now: {companion_name}")
         self.global_config.set_companion_discovered(companion_name, True)
@@ -295,6 +323,8 @@ class GameEngine:
             raise ValueError("only main player can invite companion.")
 
         profile = self.get_companion_profile(companion_name)
+        if not self._is_companion_alive(companion_name):
+            raise ValueError(f"companion is not alive: {companion_name}")
         state = self.global_config.get_companion_state(companion_name)
         if not bool(state["discovered"]):
             raise ValueError(f"companion must be discovered first: {companion_name}")
@@ -325,7 +355,24 @@ class GameEngine:
         self.global_config.set_companion_discovered(companion_name, enabled)
 
     def set_companion_in_team(self, companion_name: str, enabled: bool) -> None:
-        self.get_companion_profile(companion_name)
+        profile = self.get_companion_profile(companion_name)
+        if enabled and companion_name not in self.campus_map.roles:
+            start_node = profile.home_node
+            if self.main_player_name is not None and self.main_player_name in self.campus_map.roles:
+                start_node = self.get_role(self.main_player_name).current_location
+            if self.campus_map.is_node_valid(start_node):
+                Role(companion_name, self.campus_map, self.global_config, start_node, health=10.0)
+        if (
+            enabled
+            and self.main_player_name is not None
+            and self.main_player_name in self.campus_map.roles
+            and companion_name in self.campus_map.roles
+        ):
+            main_node = self.get_role(self.main_player_name).current_location
+            comp_role = self.get_role(companion_name)
+            if comp_role.current_location != main_node:
+                self.campus_map.transfer_role(companion_name, comp_role.current_location, main_node)
+                comp_role._finish_move(main_node)
         self.global_config.set_companion_in_team(companion_name, enabled)
 
     def set_companion_affection(self, companion_name: str, value: float) -> None:
@@ -341,7 +388,7 @@ class GameEngine:
         if value < 0:
             raise ValueError("companion holy_water must be >= 0.")
         state = self.global_config.get_companion_state(companion_name)
-        state["holy_water"] = float(value)
+        state["holy_water"] = min(float(value), float(MAX_HOLY_WATER))
 
     def add_companion_holy_water(self, companion_name: str, delta: float) -> None:
         self.get_companion_profile(companion_name)
@@ -349,7 +396,7 @@ class GameEngine:
         next_value = float(state.get("holy_water", 0.0)) + float(delta)
         if next_value < 0:
             raise ValueError("companion holy_water cannot be negative.")
-        state["holy_water"] = next_value
+        state["holy_water"] = min(next_value, float(MAX_HOLY_WATER))
 
     def deploy_companion_card(
         self,
@@ -451,7 +498,41 @@ class GameEngine:
             role = self.get_role(task.role_name)
             self.campus_map.transfer_role(task.role_name, task.from_node, task.to_node)
             role._finish_move(task.to_node)
+            self._sync_follow_units_on_owner_move(task.role_name, task.to_node)
+            if self.main_player_name is not None and task.role_name == self.main_player_name:
+                self._sync_team_companions_on_main_move(task.to_node)
             del self._movement_tasks[task.role_name]
+
+    def _sync_follow_units_on_owner_move(self, role_name: str, node_name: str) -> None:
+        """
+        Runtime unit ownership rule:
+        - Units follow their owner role unless explicitly redeployed elsewhere.
+        """
+        if role_name not in self.players:
+            return
+        owner = self.get_player(role_name)
+        for unit in owner.list_active_units():
+            unit.node_name = node_name
+
+    def _sync_team_companions_on_main_move(self, node_name: str) -> None:
+        """
+        Companion follow rule:
+        - In-team companions follow main player by default, unless that companion is
+          currently in an explicit movement task.
+        """
+        for name in self.global_config.list_team_companions():
+            if name == self.main_player_name:
+                continue
+            if name not in self.campus_map.roles:
+                continue
+            if name in self._movement_tasks:
+                continue
+            role = self.get_role(name)
+            if role.current_location == node_name:
+                continue
+            self.campus_map.transfer_role(name, role.current_location, node_name)
+            role._finish_move(node_name)
+            self._sync_follow_units_on_owner_move(name, node_name)
 
     def _regenerate_players(self, amount: float) -> None:
         for name, player in self.players.items():
@@ -460,6 +541,8 @@ class GameEngine:
                     player.holy_water = 0.0
                     continue
             player.regenerate_holy_water(amount)
+            if player.holy_water > MAX_HOLY_WATER:
+                player.holy_water = float(MAX_HOLY_WATER)
 
     def _companion_holy_water_rate_per_time(self) -> float:
         multiplier = 1.0
@@ -477,7 +560,10 @@ class GameEngine:
             state = self.global_config.get_companion_state(name)
             if not bool(state.get("can_attack", False)):
                 continue
-            state["holy_water"] = float(state.get("holy_water", 0.0)) + delta
+            state["holy_water"] = min(
+                float(state.get("holy_water", 0.0)) + delta,
+                float(MAX_HOLY_WATER),
+            )
 
     def _tick_romance_affection(self, amount: float) -> None:
         for name in self.global_config.list_team_companions():
@@ -494,30 +580,74 @@ class GameEngine:
 
         # 罗宾：注意到玩家后主动提出加入（自动发现 + 动态提示）
         robin_state = self.global_config.get_companion_state("罗宾")
-        if (not bool(robin_state["discovered"])) and main_node == "田径场":
+        if self._is_companion_alive("罗宾") and (not bool(robin_state["discovered"])) and main_node == "田径场":
             self.global_config.set_companion_discovered("罗宾", True)
             self.global_config.add_dynamic_state("罗宾注意到你并主动提出加入队伍")
 
         # 冬雨：在图书馆可发现
         dongyu_state = self.global_config.get_companion_state("冬雨")
-        if (not bool(dongyu_state["discovered"])) and main_node == "图书馆":
+        if self._is_companion_alive("冬雨") and (not bool(dongyu_state["discovered"])) and main_node == "图书馆":
             self.global_config.set_companion_discovered("冬雨", True)
             self.global_config.add_dynamic_state("你在图书馆发现了冬雨")
 
         # 许琪琪：仅在东教学楼内部/北侧且时间不在[6,9]可发现
         xu_state = self.global_config.get_companion_state("许琪琪")
-        if not bool(xu_state["discovered"]):
+        if self._is_companion_alive("许琪琪") and (not bool(xu_state["discovered"])):
             if main_node in ("东教学楼内部", "东教学楼北") and (3 < now < 8):
                 self.global_config.set_companion_discovered("许琪琪", True)
                 self.global_config.add_dynamic_state("你在东教学楼北侧路径上发现了许琪琪")
 
         # 马超鹏：时间<4 且在东教学楼内部可发现
         ma_state = self.global_config.get_companion_state("马超鹏")
-        if (not bool(ma_state["discovered"])) and now < 4 and main_node == "东教学楼内部":
+        if self._is_companion_alive("马超鹏") and (not bool(ma_state["discovered"])) and now < 4 and main_node == "东教学楼内部":
             self.global_config.set_companion_discovered("马超鹏", True)
             self.global_config.add_dynamic_state("东教学楼事件触发：你发现了马超鹏")
 
+    def _run_auto_encounter_awareness(self) -> None:
+        """
+        Hard rule:
+        - After t>5, if main player is in the same node with enemy/neutral characters,
+          auto-mark awareness and write memory marker `遭遇<角色名>`.
+        """
+
+        if self.main_player_name is None:
+            return
+        now = float(self.global_config.current_time_unit)
+        if now <= 5.0:
+            return
+        main_name = self.main_player_name
+        main_role = self.get_role(main_name)
+        node = self.campus_map.get_node(main_role.current_location)
+        for role_name in list(node.roles):
+            if role_name == main_name:
+                continue
+            if not self._is_auto_detect_target(role_name):
+                continue
+            marker = f"遭遇{role_name}"
+            if marker in self.global_config.dynamic_states:
+                continue
+            self.global_config.add_dynamic_state(marker)
+            main_role.add_dynamic_state(marker)
+            if role_name in self.character_profiles:
+                self.add_character_history(role_name, f"遭遇{main_name}")
+
+    def _is_auto_detect_target(self, role_name: str) -> bool:
+        if role_name not in self.character_profiles:
+            return False
+        profile = self.character_profiles[role_name]
+        if profile.status != "存活":
+            return False
+        alignment = str(profile.alignment)
+        if ("敌对" not in alignment) and ("中立" not in alignment):
+            return False
+        if role_name in self.campus_map.roles:
+            if self.get_role(role_name).health <= 0:
+                return False
+        return True
+
     def _can_discover_companion(self, actor_role_name: str, companion_name: str) -> bool:
+        if not self._is_companion_alive(companion_name):
+            return False
         role = self.get_role(actor_role_name)
         now = self.global_config.current_time_unit
         node = role.current_location
@@ -540,9 +670,41 @@ class GameEngine:
             self.game_over = True
             self.game_result = "main_player_dead"
 
+    def _is_companion_alive(self, companion_name: str) -> bool:
+        if companion_name in self.character_profiles:
+            if self.character_profiles[companion_name].status != "存活":
+                return False
+        if companion_name in self.campus_map.roles:
+            if self.get_role(companion_name).health <= 0:
+                return False
+        return True
+
     def _enforce_main_player_holy_water_gate(self) -> None:
         if self.main_player_name is None:
             return
         if self.global_config.can_main_player_gain_holy_water:
             return
         self.get_player(self.main_player_name).holy_water = 0.0
+
+    def _enforce_main_player_card_valid_gate(self) -> None:
+        """
+        Main-player playable window defaults by install state:
+        - installed: 4
+        - downloading/not_installed/confiscated: 0
+        """
+
+        if self.main_player_name is None:
+            return
+        player = self.get_player(self.main_player_name)
+        if not self.global_config.can_main_player_gain_holy_water:
+            target = 0
+        elif (
+            MAIN_ROYALE_TOKEN_ACTIVE in set(self.global_config.dynamic_states)
+            or MAIN_ROYALE_TOKEN_FLAG in set(self.global_config.dynamic_states)
+        ):
+            target = 8
+        else:
+            target = 4
+        if player.card_valid == target:
+            return
+        player.set_card_valid(target)

@@ -27,7 +27,7 @@ Classes:
 
 from __future__ import annotations
 
-from .constants import BASE_HOLY_WATER_PER_TIME
+from .constants import BASE_HOLY_WATER_PER_TIME, MAX_HOLY_WATER
 from .global_config import GlobalConfig
 from .map_core import CampusMap
 from .units import DeployedUnit, NearbyUnitStatus, TargetKind, UnitCard, build_all_unit_cards, build_default_unit_cards
@@ -159,12 +159,12 @@ class PlayerRole(Role):
             raise ValueError("card_deck must contain exactly 8 cards.")
         for idx, card_name in enumerate(self.card_deck):
             self.card_deck[idx] = self._resolve_known_card_name(card_name)
-        if not (1 <= self.card_valid <= 8):
-            raise ValueError("card_valid must be between 1 and 8.")
+        if not (0 <= self.card_valid <= 8):
+            raise ValueError("card_valid must be between 0 and 8.")
 
     def set_card_valid(self, value: int) -> None:
-        if not (1 <= int(value) <= 8):
-            raise ValueError("card_valid must be between 1 and 8.")
+        if not (0 <= int(value) <= 8):
+            raise ValueError("card_valid must be between 0 and 8.")
         self.card_valid = int(value)
 
     def set_card_deck(self, deck: list[str]) -> None:
@@ -192,6 +192,8 @@ class PlayerRole(Role):
         if time_delta < 0:
             raise ValueError("time_delta must be >= 0.")
         self.holy_water += self.holy_water_rate_per_time() * time_delta
+        if self.holy_water > MAX_HOLY_WATER:
+            self.holy_water = MAX_HOLY_WATER
         return self.holy_water
 
     def deploy_unit(self, unit_name: str, node_name: str | None = None) -> DeployedUnit:
@@ -202,9 +204,7 @@ class PlayerRole(Role):
             raise ValueError(f"holy water is not enough: need {card.consume}, current {self.holy_water}")
 
         spawn_node = node_name or self.current_location
-        spawn = self._campus_map.get_node(spawn_node)
-        if not spawn.valid:
-            raise ValueError(f"cannot deploy at destroyed node: {spawn_node}")
+        self._campus_map.get_node(spawn_node)
         self.holy_water -= card.consume
 
         unit_id = f"{self.name}-U{self._next_unit_seq}"

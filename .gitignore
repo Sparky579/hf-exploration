@@ -1,6 +1,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
+backend/logs/
+frontend/vite_log.txt
 
 # environments
 .env

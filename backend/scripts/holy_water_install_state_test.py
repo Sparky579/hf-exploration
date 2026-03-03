@@ -42,12 +42,16 @@ def main() -> None:
     pipe.compile_line("[global.main_player=MAIN]")
 
     pipe.compile_line("[global.main_game_state=installed]")
+    assert_equal(p1.card_valid, 4, "installed state should default card_valid to 4")
     p1.holy_water = 0.0
     engine.advance_time(2.0)
     assert_equal(p1.holy_water, 1.0, "installed state should regenerate holy water")
 
     for state in ("downloading", "not_installed", "confiscated"):
         pipe.compile_line(f"[global.main_game_state={state}]")
+        assert_equal(p1.card_valid, 0, f"{state} should default card_valid to 0")
+        pipe.compile_line("[MAIN.card_valid=2]")
+        assert_equal(p1.card_valid, 2, f"{state} should still allow console card_valid override")
         # Even if user tries to set holy water, system should clamp to 0.
         pipe.compile_line("[MAIN.holy_water=9]")
         assert_equal(p1.holy_water, 0.0, f"{state} should force holy water to zero")

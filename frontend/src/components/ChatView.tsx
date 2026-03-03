@@ -1,21 +1,25 @@
 import { useEffect, useRef } from 'react';
-import { ChatMessage } from '../types';
+import type { ChatMessage } from '../types';
 import { Bot, User, AlertCircle, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 
 interface ChatViewProps {
     messages: ChatMessage[];
+    isWaiting: boolean;
     isStreaming: boolean;
+    isThinking: boolean;
+    thinkingTick: number;
+    isGameOver: boolean;
     onRetry: () => void;
 }
 
-export default function ChatView({ messages, isStreaming, onRetry }: ChatViewProps) {
+export default function ChatView({ messages, isWaiting, isStreaming, isThinking, thinkingTick, isGameOver, onRetry }: ChatViewProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
 
     // Auto scroll to bottom
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages, isStreaming]);
+    }, [messages, isStreaming, isThinking, thinkingTick]);
 
     // Strip [command]...[/command] from text
     const formatText = (text: string) => {
@@ -50,7 +54,7 @@ export default function ChatView({ messages, isStreaming, onRetry }: ChatViewPro
                                     <span>{formatted || "Failed to communicate with the server."}</span>
 
                                     {/* Retry Button only on the latest failed system message */}
-                                    {(idx === messages.length - 1 || idx === messages.length - 2) && (
+                                    {!isGameOver && (idx === messages.length - 1 || idx === messages.length - 2) && (
                                         <button
                                             onClick={onRetry}
                                             className="ml-4 flex items-center gap-1.5 px-3 py-1.5 rounded bg-red-500/20 hover:bg-red-500/30 transition shadow-sm text-sm"
@@ -69,6 +73,32 @@ export default function ChatView({ messages, isStreaming, onRetry }: ChatViewPro
                     </div>
                 );
             })}
+            {(isWaiting || isThinking) && (
+                <div className="flex gap-4 max-w-3xl mr-auto animate-fade-in">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center border bg-slate-800/80 border-slate-700/50 text-slate-300">
+                        <Bot className="w-5 h-5" />
+                    </div>
+                    <div className="px-5 py-4 rounded-2xl rounded-tl-sm glass-panel text-[15px] leading-relaxed relative bg-slate-900/40 border-slate-700/30">
+                        <div className="font-serif text-slate-200 flex items-center gap-2">
+                            <span>{isThinking ? '思考中' : '等待中'}</span>
+                            <span className="inline-flex gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-accent-primary animate-pulse" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-accent-primary animate-pulse [animation-delay:120ms]" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-accent-primary animate-pulse [animation-delay:240ms]" />
+                            </span>
+                            {isThinking && <span className="text-xs text-slate-400 font-mono">#{thinkingTick}</span>}
+                        </div>
+                        {isThinking && (
+                            <div className="mt-2 w-44 h-1.5 rounded bg-slate-700/50 overflow-hidden">
+                                <div
+                                    className="h-full bg-gradient-to-r from-cyan-400/70 to-accent-primary/80 transition-all duration-300"
+                                    style={{ width: `${20 + (thinkingTick % 7) * 10}%` }}
+                                />
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
             <div ref={bottomRef} className="h-4" />
         </div>
     );

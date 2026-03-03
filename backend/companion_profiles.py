@@ -87,11 +87,12 @@ def build_default_companion_profiles() -> dict[str, CompanionProfile]:
             role_type="event",
             home_node="东教学楼内部",
             move_time_cost=1.0,
-            can_attack=True,
+            can_attack=False,
             deck=["骷髅巨人", "女巫", "地狱飞龙", "火球", "亡灵大军", "骷髅墓碑", "掘地矿工", "骷髅军团"],
             description=(
                 "事件角色，机敏。开局时间单位4以前可通过东教学楼事件加入队伍。"
                 "加入后主角可直接使用其手机卡组作战。"
+                "马超鹏把主手机交给主控后，他本人不再持有可出牌设备，无法主动下牌。"
             ),
         ),
     }
