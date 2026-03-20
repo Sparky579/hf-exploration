@@ -25,8 +25,8 @@ export default function LogViewer({ sessionId, onClose }: LogViewerProps) {
     }, [sessionId]);
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-            <div className="glass-panel w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden relative">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+            <div className="glass-panel w-full max-w-4xl h-[90vh] md:h-[80vh] rounded-t-2xl md:rounded-xl flex flex-col overflow-hidden relative">
                 <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
                     <h2 className="text-xl font-semibold flex items-center gap-2">
                         <Activity className="w-5 h-5 text-accent-primary" />
@@ -40,7 +40,7 @@ export default function LogViewer({ sessionId, onClose }: LogViewerProps) {
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+                <div className="flex-1 overflow-y-auto p-3 md:p-6 flex flex-col gap-4 md:gap-6">
                     {loading ? (
                         <div className="flex justify-center py-10">
                             <div className="w-8 h-8 rounded-full border-2 border-accent-primary border-t-transparent animate-spin" />

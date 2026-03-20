@@ -178,18 +178,18 @@ export default function StatusPanel({ state }: { state: PlayerState | null }) {
 
     return (
         <>
-            <div className="w-full h-full min-h-0 p-6 pr-4 overflow-y-auto overflow-x-hidden space-y-6 select-none animate-fade-in">
+            <div className="w-full h-full min-h-0 p-3 md:p-6 md:pr-4 overflow-y-auto overflow-x-hidden space-y-4 md:space-y-6 select-none animate-fade-in">
             <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2 mb-2">
                 <Shield className="text-accent-primary" />
                 状态面板
             </h2>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-2 md:gap-4">
                 <div className="glass-panel p-4 flex flex-col gap-1 relative overflow-hidden">
                     <div className="text-text-secondary text-sm font-medium flex items-center gap-1.5 z-10">
                         <Clock className="w-4 h-4" /> 时间刻度
                     </div>
-                    <div className="text-2xl font-bold text-white z-10">t = {state.time.toFixed(1)}</div>
+                    <div className="text-xl md:text-2xl font-bold text-white z-10">t = {state.time.toFixed(1)}</div>
                     <div className="absolute top-0 right-0 p-4 opacity-10">
                         <Clock className="w-12 h-12" />
                     </div>
@@ -199,7 +199,7 @@ export default function StatusPanel({ state }: { state: PlayerState | null }) {
                     <div className="text-text-secondary text-sm font-medium flex items-center gap-1.5 z-10">
                         <Heart className="w-4 h-4 text-rose-400" /> 生命值
                     </div>
-                    <div className="text-2xl font-bold text-rose-100 z-10">{state.hp.toFixed(1)}</div>
+                    <div className="text-xl md:text-2xl font-bold text-rose-100 z-10">{state.hp.toFixed(1)}</div>
                     <div className="absolute top-0 right-0 p-4 opacity-10 text-rose-500">
                         <Heart className="w-12 h-12" />
                     </div>
@@ -209,7 +209,7 @@ export default function StatusPanel({ state }: { state: PlayerState | null }) {
                     <div className="text-fuchsia-300 text-sm font-medium flex items-center gap-1.5 z-10">
                         <Droplet className="w-4 h-4" /> 圣水能量
                     </div>
-                    <div className="text-3xl font-bold text-fuchsia-100 z-10 drop-shadow-[0_0_8px_rgba(217,70,239,0.5)]">
+                    <div className="text-2xl md:text-3xl font-bold text-fuchsia-100 z-10 drop-shadow-[0_0_8px_rgba(217,70,239,0.5)]">
                         {state.holy_water.toFixed(1)} / 10
                     </div>
                     <div className="w-full h-2 bg-black/40 rounded-full mt-2 overflow-hidden relative z-10 border border-white/5">

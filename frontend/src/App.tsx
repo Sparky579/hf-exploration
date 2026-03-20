@@ -5,7 +5,7 @@ import StatusPanel from './components/StatusPanel';
 import LogViewer from './components/LogViewer';
 import { startGame, fetchState, API_ACTION_URL } from './api';
 import type { PlayerState, ChatMessage } from './types';
-import { Terminal, Send, TerminalSquare } from 'lucide-react';
+import { Terminal, Send, TerminalSquare, MessageSquare, Shield as ShieldIcon } from 'lucide-react';
 import clsx from 'clsx';
 
 const getStored = (key: string, fallback: string): string => {
@@ -42,6 +42,7 @@ function App() {
   const [thinkingTick, setThinkingTick] = useState(0);
   const [pendingResumeHint, setPendingResumeHint] = useState<string | null>(null);
   const [isLogsOpen, setIsLogsOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'chat' | 'status'>('chat');
   const hasInitializedRef = useRef(false);
 
   const initGame = useCallback(async () => {
@@ -426,37 +427,41 @@ function App() {
   };
 
   return (
-    <div className="w-full h-full flex bg-[#0a0a0c] text-slate-200 font-sans overflow-hidden">
+    <div className="w-full h-full flex flex-col md:flex-row bg-[#0a0a0c] text-slate-200 font-sans overflow-hidden">
 
-      {/* Left Chat Area 70% */}
-      <div className="flex-[7] flex flex-col h-full relative border-r border-white/5 bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')]">
+      {/* Left Chat Area - full on mobile, 70% on desktop */}
+      <div className={clsx(
+        "flex flex-col relative border-white/5 bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')]",
+        "md:flex-[7] md:h-full md:border-r",
+        mobileTab === 'chat' ? "flex-1 min-h-0" : "hidden md:flex"
+      )}>
         {/* Header */}
-        <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-white/5 bg-slate-900/60 backdrop-blur-md z-20">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-accent-primary flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.5)]">
-              <TerminalSquare className="w-5 h-5 text-white" />
+        <header className="h-14 md:h-16 shrink-0 flex items-center justify-between px-3 md:px-6 border-b border-white/5 bg-slate-900/60 backdrop-blur-md z-20">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-accent-primary flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.5)]">
+              <TerminalSquare className="w-4 h-4 md:w-5 md:h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white leading-tight">HF-Explore Runtime</h1>
-              <p className="text-xs font-mono text-accent-primary uppercase tracking-wider">Neural Narrative Engine</p>
+              <h1 className="text-base md:text-lg font-bold text-white leading-tight">HF-Explore Runtime</h1>
+              <p className="text-[10px] md:text-xs font-mono text-accent-primary uppercase tracking-wider">Neural Narrative Engine</p>
             </div>
           </div>
           <button
             onClick={() => setIsLogsOpen(true)}
             disabled={!sessionId}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 hover:text-white transition-colors disabled:opacity-50 text-sm font-medium"
+            className="flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 hover:text-white transition-colors disabled:opacity-50 text-xs md:text-sm font-medium"
           >
-            <Terminal className="w-4 h-4" /> 后台记录
+            <Terminal className="w-3.5 h-3.5 md:w-4 md:h-4" /> <span className="hidden sm:inline">后台记录</span><span className="sm:hidden">日志</span>
           </button>
         </header>
 
-        <div className="px-6 py-3 border-b border-white/5 bg-slate-950/70">
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-2">
+        <div className="px-3 md:px-6 py-2 md:py-3 border-b border-white/5 bg-slate-950/70">
+          <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-6 gap-1.5 md:gap-2">
             <select
               value={providerInput}
               onChange={(e) => setProviderInput(e.target.value as Provider)}
               disabled={isStreaming || isInitializing}
-              className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-100 outline-none focus:border-accent-primary"
+              className="px-2 md:px-3 py-1.5 md:py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs md:text-sm text-slate-100 outline-none focus:border-accent-primary"
             >
               {PROVIDERS.map((provider) => (
                 <option key={provider} value={provider}>
@@ -470,7 +475,7 @@ function App() {
               onChange={(e) => setApiKeyInput(e.target.value)}
               placeholder={providerInput === 'openai' ? "OpenAI API Key" : "Gemini API Key"}
               disabled={isStreaming || isInitializing}
-              className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-accent-primary"
+              className="px-2 md:px-3 py-1.5 md:py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs md:text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-accent-primary"
             />
             <input
               type="text"
@@ -478,7 +483,7 @@ function App() {
               onChange={(e) => setBaseUrlInput(e.target.value)}
               placeholder={providerInput === 'openai' ? "Base URL (e.g. https://api.uniapi.io/v1)" : "Base URL (optional)"}
               disabled={isStreaming || isInitializing}
-              className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-accent-primary"
+              className="px-2 md:px-3 py-1.5 md:py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs md:text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-accent-primary"
             />
             <input
               type="text"
@@ -486,13 +491,13 @@ function App() {
               onChange={(e) => setModelInput(e.target.value)}
               placeholder={providerInput === 'openai' ? "Model (e.g. doubao-seed-1-6-251015)" : "Model (e.g. gemini-3-flash-preview)"}
               disabled={isStreaming || isInitializing}
-              className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-accent-primary"
+              className="px-2 md:px-3 py-1.5 md:py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs md:text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-accent-primary"
             />
             <select
               value={reasoningEffort}
               onChange={(e) => setReasoningEffort(e.target.value as ReasoningLevel)}
               disabled={isStreaming || isInitializing}
-              className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-100 outline-none focus:border-accent-primary"
+              className="px-2 md:px-3 py-1.5 md:py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs md:text-sm text-slate-100 outline-none focus:border-accent-primary"
             >
               {REASONING_LEVELS.map((level) => (
                 <option key={level} value={level}>
@@ -504,7 +509,7 @@ function App() {
               type="button"
               onClick={handleApplyConfig}
               disabled={isStreaming || isInitializing}
-              className="px-4 py-2 rounded-lg bg-accent-primary hover:bg-accent-hover text-sm text-white font-medium disabled:opacity-50"
+              className="px-3 md:px-4 py-1.5 md:py-2 rounded-lg bg-accent-primary hover:bg-accent-hover text-xs md:text-sm text-white font-medium disabled:opacity-50"
             >
               应用并重开
             </button>
@@ -532,7 +537,7 @@ function App() {
         )}
 
         {/* Input Area */}
-        <div className="p-6 pt-0 shrink-0 z-20">
+        <div className="p-3 md:p-6 pt-0 shrink-0 z-20">
           <form onSubmit={handleSubmit} className="relative group max-w-3xl mx-auto">
             <input
               type="text"
@@ -546,10 +551,10 @@ function App() {
                     ? "终端正在生成剧情..."
                     : "输入你的行动（最多15字）"
               }
-              className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-2xl py-4 pl-6 pr-20 outline-none focus:border-accent-primary focus:ring-1 focus:ring-accent-primary transition-all disabled:opacity-50 shadow-lg placeholder-slate-500 backdrop-blur-md"
+              className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-2xl py-3 md:py-4 pl-4 md:pl-6 pr-16 md:pr-20 outline-none focus:border-accent-primary focus:ring-1 focus:ring-accent-primary transition-all disabled:opacity-50 shadow-lg placeholder-slate-500 backdrop-blur-md text-sm md:text-base"
             />
 
-            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-3">
+            <div className="absolute right-3 md:right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 md:gap-3">
               <span className={clsx("text-xs font-mono", inputText.length >= 15 ? "text-red-400" : "text-slate-500")}>
                 {inputText.length}/15
               </span>
@@ -557,18 +562,44 @@ function App() {
               <button
                 type="submit"
                 disabled={!inputText.trim() || isStreaming || playerState?.game_over}
-                className="w-10 h-10 rounded-xl bg-accent-primary hover:bg-accent-hover text-white flex items-center justify-center transition-all disabled:opacity-50 disabled:hover:bg-accent-primary"
+                className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-accent-primary hover:bg-accent-hover text-white flex items-center justify-center transition-all disabled:opacity-50 disabled:hover:bg-accent-primary"
               >
-                <Send className="w-5 h-5 -ml-0.5" />
+                <Send className="w-4 h-4 md:w-5 md:h-5 -ml-0.5" />
               </button>
             </div>
           </form>
         </div>
       </div>
 
-      {/* Right Status Panel 30% */}
-      <div className="flex-[3] h-full min-h-0 overflow-hidden relative bg-slate-950/80 flex flex-col">
+      {/* Right Status Panel - full on mobile when selected, 30% on desktop */}
+      <div className={clsx(
+        "min-h-0 overflow-hidden relative bg-slate-950/80 flex flex-col",
+        "md:flex-[3] md:h-full",
+        mobileTab === 'status' ? "flex-1" : "hidden md:flex"
+      )}>
         <StatusPanel state={playerState} />
+      </div>
+
+      {/* Mobile Bottom Tab Bar */}
+      <div className="md:hidden shrink-0 flex border-t border-white/10 bg-slate-900/95 backdrop-blur-md z-30">
+        <button
+          onClick={() => setMobileTab('chat')}
+          className={clsx(
+            "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors",
+            mobileTab === 'chat' ? "text-accent-primary border-t-2 border-accent-primary" : "text-slate-400"
+          )}
+        >
+          <MessageSquare className="w-4 h-4" /> 剧情
+        </button>
+        <button
+          onClick={() => setMobileTab('status')}
+          className={clsx(
+            "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors",
+            mobileTab === 'status' ? "text-accent-primary border-t-2 border-accent-primary" : "text-slate-400"
+          )}
+        >
+          <ShieldIcon className="w-4 h-4" /> 状态
+        </button>
       </div>
 
       {/* Log Modal */}
